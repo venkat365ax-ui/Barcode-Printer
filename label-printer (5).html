@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1f3a5f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Label Printer</title>
+<style id="pageStyle">@page { size: 100mm 75mm; margin: 0; }</style>
+<style>
+  :root{--ink:#1b2430;--muted:#667085;--line:#d0d5dd;--brand:#1f3a5f;--bg:#f4f6f8;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  header{background:var(--brand);color:#fff;padding:14px 16px;position:sticky;top:0;z-index:5}
+  header h1{margin:0;font-size:18px}
+  header p{margin:2px 0 0;font-size:12px;opacity:.8}
+  main{padding:14px;max-width:560px;margin:0 auto 110px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .card h2{font-size:14px;margin:0 0 10px;color:var(--brand);text-transform:uppercase;letter-spacing:.04em}
+  .field{margin-bottom:12px}
+  .field label{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600;margin-bottom:4px}
+  .field label .bc{font-weight:400;color:var(--muted);display:flex;gap:4px;align-items:center}
+  input[type=text],input[type=date],input[type=number],select{width:100%;font-size:17px;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}
+  input:focus,select:focus{outline:2px solid #4c7bd9;border-color:transparent}
+  input.flash{background:#dcfce7;transition:background .3s}
+  input.bad{border-color:#d92d20;background:#fff5f5}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .err{color:#d92d20;font-size:12px;margin-top:3px;min-height:0}
+  .actions{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:flex;gap:10px;z-index:5}
+  .actions button{flex:1;font-size:16px;font-weight:700;padding:14px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+  .actions button.primary{background:var(--brand);color:#fff;border-color:var(--brand);flex:2}
+  .previewWrap{display:flex;justify-content:center;overflow:auto;padding:6px;background:#e9edf2;border-radius:8px}
+  .previewWrap .label{box-shadow:0 2px 8px rgba(0,0,0,.18)}
+  .hist{list-style:none;margin:0;padding:0}
+  .hist li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #eef0f3;font-size:13px}
+  .hist li:last-child{border-bottom:0}
+  .hist button{font-size:13px;padding:6px 10px;border-radius:7px;border:1px solid var(--line);background:#fff}
+  .muted{color:var(--muted);font-size:12px}
+  .small-btn{font-size:13px;padding:6px 10px;border-radius:7px;border:1px solid var(--line);background:#fff}
+
+  /* ---------- Label ---------- */
+  .label{position:relative;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;overflow:hidden}
+  .label .lt{position:absolute;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:clip}
+  .label .ll{position:absolute;height:0.25mm;background:#000}
+  .label .lb{position:absolute}
+  .label .lb svg{display:block;width:100%;height:100%}
+
+  .inwrap{display:flex;gap:6px}
+  .inwrap input{flex:1;min-width:0}
+  .scan{flex:0 0 48px;font-size:20px;border:1px solid var(--line);border-radius:9px;background:#eef3fb}
+  #scanner{position:fixed;inset:0;background:#000;z-index:50;display:none;flex-direction:column}
+  #scanner.open{display:flex}
+  #scanner .vw{position:relative;flex:1;overflow:hidden}
+  #scanner video{width:100%;height:100%;object-fit:cover}
+  #scanner .frame{position:absolute;left:8%;right:8%;top:35%;height:22%;border:3px solid #4ade80;border-radius:10px;box-shadow:0 0 0 2000px rgba(0,0,0,.35)}
+  #scanner .bar{background:#111;color:#fff;padding:12px 14px calc(12px + env(safe-area-inset-bottom))}
+  #scanner .st{font-size:14px;margin-bottom:10px;min-height:20px}
+  #scanner .btns{display:flex;gap:10px}
+  #scanner .btns button{flex:1;font-size:16px;font-weight:700;padding:13px;border-radius:10px;border:0}
+  #scanner .ocrbtn{background:#2563eb;color:#fff}
+  #scanner .cancel{background:#333;color:#fff}
+  #scanner .cands{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  #scanner .cands button{font-size:16px;padding:9px 12px;border-radius:8px;border:0;background:#fff;color:#000;font-weight:700}
+  #printArea{display:none}
+  @media print{
+    body{background:#fff}
+    header,main,.actions{display:none!important}
+    #printArea{display:block}
+    #printArea .label{page-break-after:always;break-after:page;box-shadow:none}
+    #printArea .label:last-child{page-break-after:auto;break-after:auto}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Label Printer</h1>
+  <p>Fill in the fields, check the preview, then tap Print</p>
+</header>
+
+<main>
+  <div class="card">
+    <h2>Label details</h2>
+
+    <div class="field">
+      <label for="item">Item code <span class="bc"><input type="checkbox" id="bc_item" checked> barcode</span></label>
+      <div class="inwrap"><input type="text" id="item" autocomplete="off" autocapitalize="characters" placeholder="e.g. A0001"><button type="button" class="scan" data-f="item" aria-label="Scan with camera">📷</button></div>
+      <div class="err" id="err_item"></div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="qty">Qty <span class="bc"><input type="checkbox" id="bc_qty" checked> barcode</span></label>
+        <div class="inwrap"><input type="text" id="qty" inputmode="decimal" autocomplete="off" placeholder="e.g. 500"><button type="button" class="scan" data-f="qty" aria-label="Scan with camera">📷</button></div>
+        <div class="err" id="err_qty"></div>
+      </div>
+      <div class="field">
+        <label for="unit">Unit</label>
+        <input type="text" id="unit" autocomplete="off" autocapitalize="characters" placeholder="PCS">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="batch">Batch number <span class="bc"><input type="checkbox" id="bc_batch" checked> barcode</span></label>
+      <div class="inwrap"><input type="text" id="batch" autocomplete="off" autocapitalize="characters" placeholder="e.g. B-2611-001"><button type="button" class="scan" data-f="batch" aria-label="Scan with camera">📷</button></div>
+      <div class="err" id="err_batch"></div>
+    </div>
+
+    <div class="field">
+      <label for="lp">License plate <span class="bc"><input type="checkbox" id="bc_lp" checked> barcode</span></label>
+      <div class="inwrap"><input type="text" id="lp" autocomplete="off" autocapitalize="characters" placeholder="e.g. LP000123"><button type="button" class="scan" data-f="lp" aria-label="Scan with camera">📷</button></div>
+      <div class="err" id="err_lp"></div>
+    </div>
+
+    <div>
+      <div class="field">
+        <label for="loc">Location <span class="bc"><input type="checkbox" id="bc_loc"> bc</span></label>
+        <div class="inwrap"><input type="text" id="loc" autocomplete="off" autocapitalize="characters" placeholder="e.g. CNC-IN"><button type="button" class="scan" data-f="loc" aria-label="Scan with camera">📷</button></div>
+        <div class="err" id="err_loc"></div>
+      </div>
+      <div class="field">
+        <label for="date">Date</label>
+        <input type="date" id="date">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Printer</h2>
+    <div class="field">
+      <label for="method">Print method</label>
+      <select id="method">
+        <option value="bt">Bluetooth label printer (Zebra / ZPL)</option>
+        <option value="sys">Phone print (AirPrint / Android print service / PDF)</option>
+      </select>
+    </div>
+    <div id="btBox">
+      <div class="row">
+        <div class="field">
+          <label for="dpi">Printer resolution</label>
+          <select id="dpi">
+            <option value="8" selected>203 dpi</option>
+            <option value="12">300 dpi</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button type="button" class="small-btn" id="connectBtn" style="width:100%;padding:12px;font-size:15px">🔗 Connect printer</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="media">Paper type in printer</label>
+        <select id="media">
+          <option value="gap" selected>Labels with gaps (die-cut)</option>
+          <option value="mark">Labels with black mark</option>
+          <option value="cont">Continuous roll (receipt paper)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label><span><input type="checkbox" id="setzpl" checked> Set printer to ZPL mode before printing</span></label>
+        <div class="muted">Mobile Zebra printers often ship in CPCL/line-print mode and would print the code as text. This sends a one-line setting so the printer accepts ZPL.</div>
+      </div>
+      <div class="muted" id="btStatus">Not connected. Turn on the printer's Bluetooth, then tap Connect.</div>
+      <div class="muted" style="margin-top:8px"><button type="button" class="small-btn" id="copyZpl">Copy ZPL</button> &nbsp;for testing in a ZPL viewer</div>
+    </div>
+    <div id="sysBox" class="muted" style="display:none">Uses the phone's print screen. On Android, install your printer's print-service plugin (Zebra Printing / Brother / Mopria). On iPhone, use an AirPrint printer. Set the paper size to the label size in the print screen.</div>
+  </div>
+
+  <div class="card">
+    <h2>Print settings</h2>
+    <div class="row">
+      <div class="field">
+        <label for="size">Label size</label>
+        <select id="size">
+          <optgroup label="Zebra ZR328 / ZQ320 (3-inch)">
+            <option value="72x50" selected>72 × 50 mm (3" × 2")</option>
+            <option value="72x75">72 × 75 mm (3" × 3")</option>
+            <option value="72x100">72 × 100 mm (3" × 4")</option>
+            <option value="50x30">50 × 30 mm</option>
+          </optgroup>
+          <optgroup label="4-inch printers">
+          <option value="100x50">100 × 50 mm</option>
+          <option value="100x75">100 × 75 mm</option>
+          <option value="100x100">100 × 100 mm</option>
+          <option value="100x150">100 × 150 mm (4×6")</option>
+          <option value="75x50">75 × 50 mm</option>
+          <option value="A4">A4 (full page)</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="field">
+        <label for="bcsize">Barcode size</label>
+        <select id="bcsize">
+          <option value="s" selected>Small</option>
+          <option value="m">Medium</option>
+          <option value="l">Large</option>
+        </select>
+      </div>
+    </div>
+    <div id="sizeWarn" class="err" style="display:none;margin:-4px 0 10px;font-size:13px">⚠ This size is wider than the Zebra ZR328 (72 mm). Choose a 72 mm size, or the label will be cut off.</div>
+    <div class="row">
+      <div class="field">
+        <label for="copies">Copies</label>
+        <input type="number" id="copies" min="1" max="200" value="1" inputmode="numeric">
+      </div>
+    </div>
+    <div class="field">
+      <label><span><input type="checkbox" id="increment"> Increase license plate number on each copy</span></label>
+      <div class="muted">e.g. LP000123 → LP000124 → LP000125 (last number in the code is increased)</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Preview</h2>
+    <div class="previewWrap"><div id="preview"></div></div>
+    <p class="muted" id="previewNote"></p>
+  </div>
+
+  <div class="card">
+    <h2 style="display:flex;justify-content:space-between;align-items:center">Recent labels <button class="small-btn" id="clearHist" type="button">Clear</button></h2>
+    <ul class="hist" id="hist"></ul>
+    <p class="muted" id="histEmpty">Printed labels show here so you can reprint quickly.</p>
+  </div>
+</main>
+
+<div class="actions">
+  <button type="button" id="clearBtn">Clear</button>
+  <button type="button" class="primary" id="printBtn">🖨 Print</button>
+</div>
+
+<div id="scanner">
+  <div class="vw"><video id="scanVideo" playsinline muted></video><img id="scanPhoto" alt="" style="display:none;width:100%;height:100%;object-fit:contain"><div class="frame" id="scanFrame"></div></div>
+  <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
+  <div class="bar">
+    <div class="st" id="scanStatus">Point the camera at the barcode</div>
+    <div class="cands" id="scanCands"></div>
+    <div class="btns">
+      <button type="button" class="ocrbtn" id="ocrBtn">🔤 Read text</button>
+      <button type="button" class="ocrbtn" id="photoBtn" style="background:#16a34a">📸 Take photo</button>
+      <button type="button" class="cancel" id="scanCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="printArea"></div>
+
+<script>
+/* ---------------- Code 128 (set B) barcode encoder ---------------- */
+const C128 = ["212222","222122","222221","121223","121322","131222","122213","122312","132212","221213","221312","231212","112232","122132","122231","113222","123122","123221","223211","221132","221231","213212","223112","312131","311222","321122","321221","312212","322112","322211","212123","212321","232121","111323","131123","131321","112313","132113","132311","211313","231113","231311","112133","112331","132131","113123","113321","133121","313121","211331","231131","213113","213311","213131","311123","311321","331121","312113","312311","332111","314111","221411","431111","111224","111422","121124","121421","141122","141221","112214","112412","122114","122411","142112","142211","241211","221114","413111","241112","134111","111242","121142","121241","114212","124112","124211","411212","421112","421211","212141","214121","412121","111143","111341","131141","114113","114311","411113","411311","113141","114131","311141","411131","211412","211214","211232","2331112"];
+
+// module width (mm) and bar height (mm)
+const BCSIZE = { s:[0.25, 7], m:[0.33, 10], l:[0.4, 13] };
+function validB(s){ for (const ch of s){ const c = ch.charCodeAt(0); if (c < 32 || c > 126) return false; } return true; }
+
+function code128Svg(text){
+  // Start B = 104, values = ascii - 32
+  const codes = [104];
+  for (const ch of text) codes.push(ch.charCodeAt(0) - 32);
+  let sum = 104;
+  for (let i = 1; i < codes.length; i++) sum += codes[i] * i;
+  codes.push(sum % 103);
+  codes.push(106); // stop
+  let x = 0, rects = "";
+  for (const code of codes){
+    const p = C128[code];
+    for (let i = 0; i < p.length; i++){
+      const w = +p[i];
+      if (i % 2 === 0) rects += `<rect x="${x}" y="0" width="${w}" height="10"/>`;
+      x += w;
+    }
+  }
+  const total = x;
+  return `<svg viewBox="0 0 ${total} 10" preserveAspectRatio="none" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><g fill="#000">${rects}</g></svg>`;
+}
+
+/* ---------------- Helpers ---------------- */
+const $ = id => document.getElementById(id);
+const FIELDS = ["item","qty","unit","batch","lp","loc","date"];
+const BC = {item:"bc_item", qty:"bc_qty", batch:"bc_batch", lp:"bc_lp", loc:"bc_loc"};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const store = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+};
+const SIZES = {"72x50":[72,50],"72x75":[72,75],"72x100":[72,100],"50x30":[50,30],"100x50":[100,50],"100x75":[100,75],"100x100":[100,100],"100x150":[100,150],"75x50":[75,50],"A4":[210,297]};
+
+function today(){ const d = new Date(); return d.toISOString().slice(0,10); }
+function fmtDate(iso){ if(!iso) return ""; const [y,m,d] = iso.split("-"); return `${d}-${m}-${y}`; }
+
+function readForm(){
+  const o = {};
+  FIELDS.forEach(f => o[f] = $(f).value.trim());
+  o.bc = {}; Object.keys(BC).forEach(k => o.bc[k] = $(BC[k]).checked);
+  return o;
+}
+
+function incrementCode(code, n){
+  if (!n) return code;
+  const m = code.match(/^(.*?)(\d+)(\D*)$/);
+  if (!m) return code + "-" + (n + 1);
+  const num = (BigInt(m[2]) + BigInt(n)).toString().padStart(m[2].length, "0");
+  return m[1] + num + m[3];
+}
+
+/* ---------------- Shared label layout (same for preview, phone print and Zebra) ---------------- */
+function bcModules(v){ return 11*(v.length + 3) + 2; }
+function layout(d, lp){
+  const dpmm = +$("dpi").value || 8;
+  const [wmm,hmm] = SIZES[$("size").value];
+  const W = Math.round(wmm*dpmm), H = Math.round(hmm*dpmm);
+  const M = Math.round(2*dpmm), gap = Math.round(2*dpmm), quiet = 10;
+  const [modMm, hMm] = BCSIZE[$("bcsize").value];
+  const wantMw = Math.max(1, Math.round(modMm*dpmm));
+  const minMw = dpmm >= 12 ? 2 : 2;           // thinnest bar we allow when two barcodes share a row
+  const qtyText = d.qty ? d.qty + (d.unit ? " " + d.unit : "") : "";
+  const cell = (title, text, bc) => ({title, text, bc: bc && validB(bc) ? bc : null});
+  const fitsHalf = c => !c.bc || Math.floor(((W - 2*M - gap)/2) / (bcModules(c.bc) + quiet)) >= minMw;
+  const rows = [];
+  const pair = (a, b) => {
+    const cs = [a, b].filter(Boolean);
+    if (cs.length === 2 && !(fitsHalf(cs[0]) && fitsHalf(cs[1]))) cs.forEach(c => rows.push([c]));
+    else if (cs.length) rows.push(cs);
+  };
+  if (d.item) rows.push([cell("ITEM", d.item, d.bc.item ? d.item : null)]);
+  pair(d.qty ? cell("QTY", qtyText, d.bc.qty ? d.qty : null) : null, d.batch ? cell("BATCH", d.batch, d.bc.batch ? d.batch : null) : null);
+  if (lp) rows.push([cell("LP", lp, d.bc.lp ? lp : null)]);
+  pair(d.loc ? cell("LOCATION", d.loc, d.bc.loc ? d.loc : null) : null, d.date ? cell("DATE", fmtDate(d.date), null) : null);
+
+  const rowH = Math.floor((H - 2*M) / Math.max(1, rows.length));
+  const hF = Math.max(16, Math.min(Math.round(4*dpmm), Math.round(rowH*0.30)));   // header text height
+  const items = [];   // {k:'text'|'bar'|'line', ...} in dots
+  rows.forEach((row, ri) => {
+    const y0 = M + ri*rowH;
+    const cellW = Math.floor((W - 2*M - gap*(row.length-1)) / row.length);
+    row.forEach((c, ci) => {
+      const x0 = M + ci*(cellW + gap);
+      if (c.bc){
+        items.push({k:"text", x:x0, y:y0, h:hF, w:cellW, s:c.title + ": " + c.text});
+        const by = y0 + hF + Math.round(0.6*dpmm);
+        const bh = Math.max(Math.round(3*dpmm), Math.min(Math.round(hMm*dpmm), y0 + rowH - by - Math.round(1*dpmm)));
+        const mw = Math.max(1, Math.min(wantMw, Math.floor(cellW / (bcModules(c.bc) + quiet))));
+        items.push({k:"bar", x:x0, y:by, h:bh, mw, v:c.bc});
+      } else {
+        const tF = Math.max(14, Math.round(hF*0.7)), vF = Math.min(Math.round(rowH - tF - 2*dpmm), Math.round(hF*1.3));
+        items.push({k:"text", x:x0, y:y0, h:tF, w:cellW, s:c.title});
+        items.push({k:"text", x:x0, y:y0 + tF + Math.round(0.6*dpmm), h:vF, w:cellW, s:c.text});
+      }
+      if (ri < rows.length - 1) items.push({k:"line", x:x0, y:y0 + rowH - Math.round(0.6*dpmm), w:cellW});
+    });
+  });
+  return {W, H, dpmm, items};
+}
+
+function labelHtml(d, lpOverride){
+  const L = layout(d, lpOverride ?? d.lp), u = v => (v / L.dpmm).toFixed(2) + "mm";
+  let h = "";
+  for (const it of L.items){
+    if (it.k === "text") h += `<div class="lt" style="left:${u(it.x)};top:${u(it.y)};width:${u(it.w)};font-size:${u(it.h*1.12)};line-height:${u(it.h)}">${esc(it.s)}</div>`;
+    else if (it.k === "line") h += `<div class="ll" style="left:${u(it.x)};top:${u(it.y)};width:${u(it.w)}"></div>`;
+    else {
+      const mods = bcModules(it.v);
+      h += `<div class="lb" style="left:${u(it.x)};top:${u(it.y)};width:${u(mods*it.mw)};height:${u(it.h)}">${code128Svg(it.v)}</div>`;
+    }
+  }
+  return `<div class="label" style="width:${u(L.W)};height:${u(L.H)}">${h}</div>`;
+}
+
+function zf(s){ return String(s).replace(/_/g,"_5F").replace(/\^/g,"_5E").replace(/~/g,"_7E"); }
+function zplLabel(d, lp){
+  const L = layout(d, lp);
+  const mn = {gap:"^MNY", mark:"^MNM", cont:"^MNN"}[$("media").value] || "^MNY";
+  let z = `^XA^CI28${mn}^PW${L.W}^LL${L.H}^LH0,0^PON\n`;
+  for (const it of L.items){
+    if (it.k === "text") z += `^FO${it.x},${it.y}^A0N,${it.h},${Math.round(it.h*0.9)}^FB${it.w},1,0,L^FH_^FD${zf(it.s)}^FS\n`;
+    else if (it.k === "line") z += `^FO${it.x},${it.y}^GB${it.w},2,2^FS\n`;
+    else z += `^BY${it.mw},3,${it.h}^FO${it.x},${it.y}^BCN,${it.h},N,N,N^FH_^FD${zf(it.v)}^FS\n`;
+  }
+  return z + "^XZ\n";
+}
+
+/* ---------------- Validation ---------------- */
+function validate(d, showRequired){
+  let ok = true;
+  const check = (f, msg) => { $("err_"+f).textContent = msg || ""; $(f).classList.toggle("bad", !!msg); if (msg) ok = false; };
+  ["item","qty","batch","lp","loc"].forEach(f => {
+    const v = d[f];
+    if (v && !validB(v)) check(f, "Use only standard letters, numbers and symbols.");
+    else check(f, "");
+  });
+  if (showRequired){
+    if (!d.item) check("item", "Item code is required.");
+    if (!d.qty) check("qty", "Qty is required.");
+  }
+  if (d.qty && isNaN(Number(d.qty))) check("qty", "Qty should be a number.");
+  return ok;
+}
+
+/* ---------------- Preview ---------------- */
+function render(){
+  const d = readForm();
+  validate(d, false);
+  const [w,h] = SIZES[$("size").value];
+  $("pageStyle").textContent = `@page { size: ${w}mm ${h}mm; margin: 0; }`;
+  $("preview").innerHTML = labelHtml(d);
+  // scale preview to fit screen width
+  $("preview").style.zoom = 1;
+  const lab = $("preview").firstElementChild;
+  const avail = $("preview").parentElement.clientWidth - 16;
+  const pxW = lab.offsetWidth;
+  $("preview").style.zoom = Math.min(1.6, avail / pxW);
+  const copies = Math.max(1, parseInt($("copies").value) || 1);
+  const tooWide = w > 72 && $("method").value === "bt";
+  $("sizeWarn").style.display = tooWide ? "block" : "none";
+  $("previewNote").textContent = `${w} × ${h} mm · ${copies} cop${copies > 1 ? "ies" : "y"}` + ($("increment").checked && copies > 1 && d.lp ? ` · LP ${d.lp} → ${incrementCode(d.lp, copies - 1)}` : "");
+  store.set("lbl_draft", d);
+}
+
+/* ---------------- History ---------------- */
+function renderHist(){
+  const h = store.get("lbl_hist", []);
+  $("hist").innerHTML = h.map((e, i) => `<li><span><b>${esc(e.item)}</b> · ${esc(e.qty)} ${esc(e.unit||"")}<br><span class="muted">${esc(e.batch||"-")} · ${esc(e.lp||"-")} · ${esc(e.loc||"-")}</span></span><button type="button" data-i="${i}">Use</button></li>`).join("");
+  $("histEmpty").style.display = h.length ? "none" : "block";
+}
+function addHist(d){
+  let h = store.get("lbl_hist", []);
+  h = [d, ...h.filter(e => JSON.stringify(e) !== JSON.stringify(d))].slice(0, 15);
+  store.set("lbl_hist", h);
+  renderHist();
+}
+function fill(d){
+  FIELDS.forEach(f => { if (d[f] !== undefined) $(f).value = d[f]; });
+  if (d.bc) Object.keys(BC).forEach(k => { if (d.bc[k] !== undefined) $(BC[k]).checked = d.bc[k]; });
+  render();
+}
+
+/* ---------------- Bluetooth (Web Bluetooth, Zebra BLE) ---------------- */
+const ZEBRA_SVC = "38eb4a80-c570-11e3-9507-0002a5d5c51b";
+const ZEBRA_WRITE = "38eb4a82-c570-11e3-9507-0002a5d5c51b";
+let btDevice = null, btChar = null;
+function btMsg(t){ $("btStatus").textContent = t; }
+async function btConnect(){
+  if (!navigator.bluetooth){ btMsg("This browser has no Bluetooth access. Use Chrome on Android, opened from an https:// link."); return false; }
+  try {
+    btMsg("Searching for printer…");
+    btDevice = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [ZEBRA_SVC] });
+    btDevice.addEventListener("gattserverdisconnected", () => { btChar = null; btMsg("Printer disconnected. Tap Connect again."); });
+    const server = await btDevice.gatt.connect();
+    const svc = await server.getPrimaryService(ZEBRA_SVC);
+    btChar = await svc.getCharacteristic(ZEBRA_WRITE);
+    btMsg("✅ Connected: " + (btDevice.name || "printer"));
+    store.set("lbl_method", "bt");
+    return true;
+  } catch(e){
+    btChar = null;
+    btMsg("Could not connect: " + (e.message || e) + ". Check the printer is on, Bluetooth LE is enabled, and it isn't paired to another phone.");
+    return false;
+  }
+}
+async function btSend(text){
+  if (!btChar || !btDevice?.gatt?.connected){
+    if (btDevice && btDevice.gatt){ try { const s = await btDevice.gatt.connect(); btChar = await (await s.getPrimaryService(ZEBRA_SVC)).getCharacteristic(ZEBRA_WRITE); } catch(e){ btChar = null; } }
+    if (!btChar && !(await btConnect())) return false;
+  }
+  const bytes = new TextEncoder().encode(text);
+  const CH = 180;
+  for (let i = 0; i < bytes.length; i += CH){
+    const part = bytes.slice(i, i + CH);
+    if (btChar.writeValueWithoutResponse && btChar.properties?.writeWithoutResponse) await btChar.writeValueWithoutResponse(part);
+    else await btChar.writeValue(part);
+    await new Promise(r => setTimeout(r, 20));
+  }
+  return true;
+}
+
+/* ---------------- Print ---------------- */
+async function doPrint(){
+  const d = readForm();
+  if (!validate(d, true)){ window.scrollTo({top:0, behavior:"smooth"}); return; }
+  const copies = Math.min(200, Math.max(1, parseInt($("copies").value) || 1));
+  const inc = $("increment").checked && d.lp;
+  if ($("method").value === "bt"){
+    let zpl = $("setzpl").checked ? '! U1 setvar "device.languages" "hybrid_xml_zpl"\r\n' : "";
+    for (let i = 0; i < copies; i++) zpl += zplLabel(d, inc ? incrementCode(d.lp, i) : d.lp);
+    $("printBtn").disabled = true; btMsg("Sending to printer…");
+    try {
+      const ok = await btSend(zpl);
+      if (ok){
+        btMsg(`✅ Sent ${copies} label${copies > 1 ? "s" : ""} to ${btDevice?.name || "printer"}`);
+        addHist(d);
+        if (inc){ $("lp").value = incrementCode(d.lp, copies); render(); }
+      }
+    } catch(e){ btMsg("Print failed: " + (e.message || e)); }
+    $("printBtn").disabled = false;
+    return;
+  }
+  let html = "";
+  for (let i = 0; i < copies; i++) html += labelHtml(d, inc ? incrementCode(d.lp, i) : d.lp);
+  $("printArea").innerHTML = html;
+  addHist(d);
+  if (inc){ $("lp").value = incrementCode(d.lp, copies); render(); }
+  setTimeout(() => { try { window.print(); } catch(e) { alert("Printing is not available here. Open this file in Chrome or Safari."); } }, 50);
+}
+
+/* ---------------- Camera scan (barcode + text) ---------------- */
+const scan = { field:null, stream:null, timer:null, detector:null, zx:null, busy:false };
+const FIELD_NAMES = {item:"item code", qty:"qty", batch:"batch number", lp:"license plate", loc:"location"};
+function loadScript(src){ return new Promise((ok, no) => { const el = document.createElement("script"); el.src = src; el.onload = ok; el.onerror = () => no(new Error("Could not load " + src)); document.head.appendChild(el); }); }
+function scanMsg(t){ $("scanStatus").textContent = t; }
+
+function liveCameraAllowed(){ return window.isSecureContext && !!navigator.mediaDevices?.getUserMedia; }
+function setMode(live){
+  $("scanVideo").style.display = live ? "" : "none";
+  $("scanFrame").style.display = live ? "" : "none";
+  $("ocrBtn").style.display = live ? "" : "none";
+  $("scanPhoto").style.display = live ? "none" : "";
+}
+async function openScanner(field){
+  scan.field = field;
+  if (!liveCameraAllowed()){
+    // Downloaded file / http: open the phone camera app instead (must happen inside the tap)
+    setMode(false); $("scanPhoto").removeAttribute("src");
+    $("scanCands").innerHTML = "";
+    $("scanner").classList.add("open");
+    scanMsg(`Take a clear photo of the ${FIELD_NAMES[field]} barcode or text`);
+    $("photoInput").value = ""; $("photoInput").click();
+    return;
+  }
+  setMode(true);
+  $("scanCands").innerHTML = "";
+  $("scanner").classList.add("open");
+  scanMsg(`Point the camera at the ${FIELD_NAMES[field]} barcode`);
+  if (!navigator.mediaDevices?.getUserMedia){ scanMsg("Camera not available. Open the app from an https:// link in Chrome or Safari."); return; }
+  try {
+    scan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    const v = $("scanVideo"); v.srcObject = scan.stream; await v.play();
+  } catch(e){ setMode(false); scanMsg("Live camera not allowed here. Tap 📸 Take photo instead."); return; }
+  // pick a barcode engine
+  if ("BarcodeDetector" in window){
+    try {
+      const want = ["code_128","code_39","code_93","ean_13","ean_8","upc_a","upc_e","itf","codabar","qr_code","data_matrix","pdf417"];
+      const sup = await BarcodeDetector.getSupportedFormats();
+      scan.detector = new BarcodeDetector({ formats: want.filter(f => sup.includes(f)) });
+    } catch(e){ scan.detector = null; }
+  }
+  if (!scan.detector && !window.zbarWasm){
+    try { scanMsg("Loading scanner…"); await loadScript("https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.11.0/dist/inlined/index.js"); scan.zx = true; scanMsg(`Point the camera at the ${FIELD_NAMES[field]} barcode`); }
+    catch(e){ scanMsg("Barcode scanner could not load. You can still use Read text."); }
+  }
+  if (!scan.detector && window.zbarWasm) scan.zx = true;
+  scan.timer = setInterval(detectOnce, 250);
+}
+
+function frameCanvas(cropToFrame){
+  const v = $("scanVideo"); const vw = v.videoWidth, vh = v.videoHeight;
+  if (!vw) return null;
+  const c = document.createElement("canvas");
+  if (cropToFrame){
+    // crop roughly to the green frame (centre band), a little larger for safety
+    const sx = vw*0.04, sw = vw*0.92, sy = vh*0.28, sh = vh*0.36;
+    c.width = sw; c.height = sh; c.getContext("2d").drawImage(v, sx, sy, sw, sh, 0, 0, sw, sh);
+  } else { c.width = vw; c.height = vh; c.getContext("2d").drawImage(v, 0, 0); }
+  return c;
+}
+
+async function detectOnce(){
+  if (scan.busy || !$("scanner").classList.contains("open")) return;
+  scan.busy = true;
+  try {
+    let text = null;
+    if (scan.detector){
+      const r = await scan.detector.detect($("scanVideo"));
+      if (r && r.length) text = r[0].rawValue;
+    } else if (scan.zx){
+      const c = frameCanvas(true);
+      if (c){ try { const z = await zbarScan(c); if (z.length) text = z[0]; } catch(_){} }
+    }
+    if (text) acceptScan(text);
+  } catch(e){}
+  scan.busy = false;
+}
+
+function acceptScan(text){
+  text = String(text).replace(/[\x00-\x1f]/g, "").trim();
+  if (!text) return;
+  const f = scan.field;
+  $(f).value = f === "qty" ? text : text.toUpperCase();
+  try { navigator.vibrate && navigator.vibrate(80); } catch(e){}
+  closeScanner();
+  render();
+  $(f).classList.add("flash"); setTimeout(() => $(f).classList.remove("flash"), 800);
+}
+
+async function readText(){
+  const c = frameCanvas(true);
+  if (!c){ scanMsg("Camera not ready yet."); return; }
+  clearInterval(scan.timer);
+  $("ocrBtn").disabled = true;
+  try {
+    if (!window.Tesseract){ scanMsg("Loading text reader (first time takes a few seconds)…"); await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"); }
+    scanMsg("Reading text…");
+    const { data } = await Tesseract.recognize(c, "eng");
+    showCandidates(data.text);
+  } catch(e){ scanMsg("Text reader failed: " + (e.message || e)); }
+  $("ocrBtn").disabled = false;
+  scan.timer = setInterval(detectOnce, 250);
+}
+
+async function zbarScan(c){
+  if (!window.zbarWasm) await loadScript("https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.11.0/dist/inlined/index.js");
+  const sy = await zbarWasm.scanImageData(c.getContext("2d").getImageData(0, 0, c.width, c.height));
+  return [...new Set(sy.map(x => x.decode()).filter(Boolean))];
+}
+async function decodeCanvas(c){
+  try { const z = await zbarScan(c); if (z.length) return z; } catch(e){}
+  if ("BarcodeDetector" in window){
+    try { const r = await new BarcodeDetector().detect(c); if (r && r.length) return [...new Set(r.map(x => x.rawValue))]; } catch(e){}
+  }
+  return [];
+}
+function imgToCanvas(img, maxSide, rotate){
+  const sc = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.round(img.naturalWidth*sc), h = Math.round(img.naturalHeight*sc);
+  const c = document.createElement("canvas"), g = c.getContext("2d");
+  if (rotate){ c.width = h; c.height = w; g.translate(h, 0); g.rotate(Math.PI/2); }
+  else { c.width = w; c.height = h; }
+  g.drawImage(img, 0, 0, w, h);
+  return c;
+}
+async function processPhoto(file){
+  if (!file) return;
+  setMode(false);
+  $("scanCands").innerHTML = "";
+  const url = URL.createObjectURL(file);
+  const img = $("scanPhoto"); img.src = url;
+  await img.decode().catch(() => {});
+  scanMsg("Looking for a barcode…");
+  for (const size of [1600, 2600, 1100]){
+    const found = await decodeCanvas(imgToCanvas(img, size, false));
+    if (found.length === 1){ acceptScan(found[0]); return; }
+    if (found.length > 1){
+      scanMsg(`Found ${found.length} barcodes. Tap the ${FIELD_NAMES[scan.field]}:`);
+      $("scanCands").innerHTML = found.map(t => `<button type="button" data-v="${esc(t)}">${esc(t)}</button>`).join("");
+      return;
+    }
+  }
+  // no barcode: read text
+  try {
+    if (!window.Tesseract){ scanMsg("No barcode found. Loading text reader…"); await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"); }
+    scanMsg("No barcode found. Reading text…");
+    const { data } = await Tesseract.recognize(imgToCanvas(img, 2000, false), "eng");
+    showCandidates(data.text);
+  } catch(e){ scanMsg("Could not read the photo: " + (e.message || e)); }
+}
+function showCandidates(raw){
+  const toks = [...new Set((raw || "").toUpperCase().split(/[\s,;:|]+/)
+    .map(t => t.replace(/^[^A-Z0-9]+|[^A-Z0-9]+$/g, ""))
+    .filter(t => t.length >= 2 && /[A-Z0-9]/.test(t) && !/^(ITEM|CODE|QTY|BATCH|LP|LICENSE|PLATE|LOCATION|DATE|NO|NUMBER)$/.test(t)))]
+    .sort((a, b) => (/\d/.test(b) - /\d/.test(a)) || b.length - a.length).slice(0, 8);
+  if (!toks.length){ scanMsg("Nothing readable found. Take the photo closer, in good light, and try again."); return; }
+  scanMsg(`Tap the correct ${FIELD_NAMES[scan.field]}:`);
+  $("scanCands").innerHTML = toks.map(t => `<button type="button" data-v="${esc(t)}">${esc(t)}</button>`).join("");
+}
+
+function closeScanner(){
+  clearInterval(scan.timer);
+  if (scan.stream){ scan.stream.getTracks().forEach(t => t.stop()); scan.stream = null; }
+  $("scanVideo").srcObject = null;
+  $("scanner").classList.remove("open");
+}
+
+document.querySelectorAll(".scan").forEach(b => b.addEventListener("click", () => openScanner(b.dataset.f)));
+$("scanCancel").addEventListener("click", closeScanner);
+$("ocrBtn").addEventListener("click", readText);
+$("photoBtn").addEventListener("click", () => { clearInterval(scan.timer); if (scan.stream){ scan.stream.getTracks().forEach(t => t.stop()); scan.stream = null; } $("photoInput").value = ""; $("photoInput").click(); });
+$("photoInput").addEventListener("change", e => processPhoto(e.target.files[0]));
+$("scanCands").addEventListener("click", e => { const b = e.target.closest("button[data-v]"); if (b) acceptScan(b.dataset.v); });
+
+/* ---------------- Wire up ---------------- */
+document.querySelectorAll("input, select").forEach(el => el.addEventListener("input", render));
+["item","unit","batch","lp","loc"].forEach(f => $(f).addEventListener("input", e => {
+  const p = e.target.selectionStart; e.target.value = e.target.value.toUpperCase(); try { e.target.setSelectionRange(p, p); } catch(_){}
+}));
+$("printBtn").addEventListener("click", doPrint);
+$("clearBtn").addEventListener("click", () => {
+  ["item","qty","batch","lp"].forEach(f => $(f).value = "");
+  $("date").value = today(); $("copies").value = 1; render(); $("item").focus();
+});
+$("hist").addEventListener("click", e => {
+  const b = e.target.closest("button[data-i]"); if (!b) return;
+  const d = store.get("lbl_hist", [])[+b.dataset.i]; if (d) { fill({...d, date: today()}); window.scrollTo({top:0, behavior:"smooth"}); }
+});
+$("clearHist").addEventListener("click", () => { store.set("lbl_hist", []); renderHist(); });
+$("size").addEventListener("change", () => store.set("lbl_size_v2", $("size").value));
+function showMethod(){ const bt = $("method").value === "bt"; $("btBox").style.display = bt ? "" : "none"; $("sysBox").style.display = bt ? "none" : ""; }
+$("method").addEventListener("change", () => { showMethod(); store.set("lbl_method", $("method").value); render(); });
+$("dpi").addEventListener("change", () => store.set("lbl_dpi", $("dpi").value));
+$("media").addEventListener("change", () => store.set("lbl_media", $("media").value));
+const savedMedia = store.get("lbl_media", null); if (savedMedia) $("media").value = savedMedia;
+$("bcsize").addEventListener("change", () => store.set("lbl_bcsize", $("bcsize").value));
+const savedBc = store.get("lbl_bcsize", null); if (savedBc && BCSIZE[savedBc]) $("bcsize").value = savedBc;
+$("connectBtn").addEventListener("click", btConnect);
+$("copyZpl").addEventListener("click", async () => {
+  const z = zplLabel(readForm(), readForm().lp);
+  try { await navigator.clipboard.writeText(z); btMsg("ZPL copied."); } catch(e){ btMsg("Copy not allowed here."); }
+});
+const savedMethod = store.get("lbl_method", null); if (savedMethod) $("method").value = savedMethod;
+const savedDpi = store.get("lbl_dpi", null); if (savedDpi) $("dpi").value = savedDpi;
+if (!navigator.bluetooth && !savedMethod) $("method").value = "sys";
+showMethod();
+window.addEventListener("resize", render);
+
+// restore
+const savedSize = store.get("lbl_size_v2", null); if (savedSize && SIZES[savedSize]) $("size").value = savedSize;
+const draft = store.get("lbl_draft", null);
+if (draft) fill(draft);
+if (!$("date").value) $("date").value = today();
+renderHist();
+render();
+</script>
+</body>
+</html>
