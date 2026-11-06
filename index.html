@@ -469,31 +469,26 @@ function layout(d, lp){
   };
   const [modMm, hMm] = BCSIZE[$("bcsize").value];
   const wantMw = Math.max(1, Math.round(modMm*dpmm));
+  const itemMin = Math.round(4.5*dpmm);
   const minBar = Math.round(3*dpmm), maxBar = Math.round(hMm*dpmm), maxBarBig = Math.round((hMm + 3)*dpmm);
   const cw = W - 2*M, colGap = Math.round(2*dpmm);
   const bcOk = v => v && validB(v);
   const date = d.date ? fmtDateISO(d.date) : "";
   const qtyText = d.qty ? d.qty + (d.unit ? " " + d.unit : "") : "";
-  const locQR = d.loc && d.bc.loc && $("locMode").value === "qr";
-  const qm = locQR ? qrMatrix(d.loc) : null;
+  const locQR = $("locMode").value === "qr";
+  const qm = locQR ? (qrMatrix(d.loc || "A-00-00-00") || qrMatrix("A")) : null;
+  const drawQR = locQR && d.loc && d.bc.loc;
 
   // ---- blocks
+  // Fixed template: the same slots every time; empty fields keep their space
   const top = [];
-  if (d.item) top.push({t:"item", v:d.item, bc: d.bc.item && bcOk(d.item)});
-  else if (date) top.push({t:"dateonly"});
-  if (d.item && $("printName").checked){ const nm = itemName(d.item); if (nm) top.push({t:"desc", v:nm}); }
+  top.push({t:"item", v:d.item || "", bc:true, draw: !!(d.item && d.bc.item && bcOk(d.item))});
+  if ($("printName").checked) top.push({t:"desc", v: d.item ? itemName(d.item) : ""});
   const low = [];
-  if (qm){
-    if (qtyText) low.push({t:"pair", cells:[{key:"qty", v:qtyText}]});
-  } else {
-    const pair = [];
-    if (qtyText) pair.push({key:"qty", v:qtyText});
-    if (d.loc && !(d.bc.loc && bcOk(d.loc))) pair.push({key:"loc", v:d.loc});
-    if (pair.length) low.push({t:"pair", cells:pair});
-    if (d.loc && d.bc.loc && bcOk(d.loc)) low.push({t:"bc", key:"loc", v:d.loc, bc:true});
-  }
-  if (lp) low.push({t:"bc", key:"lp", v:lp, bc: d.bc.lp && bcOk(lp), big:true});
-  if (d.batch) low.push({t:"bc", key:"batch", v:d.batch, bc: d.bc.batch && bcOk(d.batch), big:true});
+  low.push({t:"pair", cells:[{key:"qty", v:qtyText}]});
+  if (!qm) low.push({t:"bc", key:"loc", v:d.loc || "", bc:true, draw: !!(d.loc && d.bc.loc && bcOk(d.loc))});
+  low.push({t:"bc", key:"lp", v:lp || "", bc:true, big:true, draw: !!(lp && d.bc.lp && bcOk(lp))});
+  low.push({t:"bc", key:"batch", v:d.batch || "", bc:true, big:true, draw: !!(d.batch && d.bc.batch && bcOk(d.batch))});
 
   // right column for the location QR
   let colW = 0, mag = 0;
@@ -506,7 +501,7 @@ function layout(d, lp){
 
   const descLines = v => {
     const tw = textW(TITLES.desc, S, true) + Math.round(1.6*dpmm);
-    if (textW(v, D, true) <= cw - tw) return [v];
+    if (!v || textW(v, D, true) <= cw - tw) return [v];
     const words = v.split(/(\s+)/); let l1 = "";
     for (let i = 0; i < words.length; i++){ const t = l1 + words[i]; if (textW(t.trim(), D, true) > cw - tw) break; l1 = t; }
     l1 = l1.trim();
@@ -516,7 +511,7 @@ function layout(d, lp){
   const vh = b => b.big ? VL : V;
   const fixed = b => b.t === "item" ? S + g1 + VB + (b.bc ? g1 : 0)
                   : b.t === "dateonly" ? S
-                  : b.t === "desc" ? descLines(b.v).length*D + (descLines(b.v).length - 1)*g1
+                  : b.t === "desc" ? 2*D + g1
                   : b.t === "pair" ? V
                   : vh(b) + (b.bc ? g1 : 0);
   const rightH = () => qm ? S + g1 + V + g1 + qm.length*mag : 0;
@@ -530,13 +525,13 @@ function layout(d, lp){
   for (const f of fs){
     setScale(f);
     const av = H - 2*M - textTotal();
-    const need = bars.length * (f > 1 ? Math.round(maxBar*0.85) : minBar) + (f > 1 ? Math.round(1.5*dpmm)*nSeps : 0);
+    const need = bars.reduce((a, b) => a + (f > 1 ? Math.round(maxBar*0.85) : (b.big ? minBar : itemMin)), 0) + (f > 1 ? Math.round(1.5*dpmm)*nSeps : 0);
     if (av >= need){ chosen = f; break; }
   }
   setScale(chosen);
   // bar heights: everyone gets the minimum, then LP/batch grow first (bigger), then the rest
   let avail = H - 2*M - textTotal();
-  bars.forEach(b => b.h = minBar); avail -= minBar*bars.length;
+  bars.forEach(b => { b.h = b.big ? minBar : itemMin; avail -= b.h; });
   for (const grp of [bars.filter(b => b.big), bars.filter(b => !b.big)]){
     let guard = 0;
     while (avail > 0 && guard++ < 50){
@@ -564,31 +559,32 @@ function layout(d, lp){
       title("item", x0, y, S);
       if (date) it.push({k:"text", x:x0, y, h:S, w, s:date, align:"R", bold:true});
       y += S + g1;
-      { const hh = fitH(b.v, VB, w, true); it.push({k:"text", x:x0, y: y + (VB - hh), h:hh, w, s:b.v, bold:true}); }
+      if (b.v){ const hh = fitH(b.v, VB, w, true); it.push({k:"text", x:x0, y: y + (VB - hh), h:hh, w, s:b.v, bold:true}); }
       y += VB;
-      if (b.bc){ y += g1; barcode(b, b.v, x0, y, w); y += b.h; }
+      if (b.bc){ y += g1; if (b.draw) barcode(b, b.v, x0, y, w); y += b.h; }
     } else if (b.t === "dateonly"){
       it.push({k:"text", x:x0, y, h:S, w, s:date, align:"R", bold:true}); y += S;
     } else if (b.t === "desc"){
       const lines = descLines(b.v);
       const tw = title("desc", x0, y, D);
-      { const hh = fitH(lines[0], D, w - tw, true); it.push({k:"text", x:x0 + tw, y: y + Math.round((D - hh)*0.85), h:hh, w:w - tw, s:lines[0], bold:true}); }
+      if (lines[0]){ const hh = fitH(lines[0], D, w - tw, true); it.push({k:"text", x:x0 + tw, y: y + Math.round((D - hh)*0.85), h:hh, w:w - tw, s:lines[0], bold:true}); }
+      y += D + g1;
+      if (lines[1]){ const hh = fitH(lines[1], D, w, true); it.push({k:"text", x:x0, y, h:hh, w, s:lines[1], bold:true}); }
       y += D;
-      if (lines[1]){ y += g1; const hh = fitH(lines[1], D, w, true); it.push({k:"text", x:x0, y, h:hh, w, s:lines[1], bold:true}); y += D; }
     } else if (b.t === "pair"){
       const n = b.cells.length, gap = Math.round(2*dpmm), cwid = Math.floor((w - gap*(n-1)) / n);
       b.cells.forEach((c, ci) => {
         const x = x0 + ci*(cwid + gap);
         const tw = title(c.key, x, y, V);
-        const hh = fitH(c.v, V, cwid - tw, true); it.push({k:"text", x:x + tw, y: y + Math.round((V - hh)*0.85), h:hh, w:cwid - tw, s:c.v, bold:true});
+        if (c.v){ const hh = fitH(c.v, V, cwid - tw, true); it.push({k:"text", x:x + tw, y: y + Math.round((V - hh)*0.85), h:hh, w:cwid - tw, s:c.v, bold:true}); }
       });
       y += V;
     } else {
       const H2 = vh(b);
       const tw = title(b.key, x0, y, H2);
-      { const hh = fitH(b.v, H2, w - tw, true); it.push({k:"text", x:x0 + tw, y: y + Math.round((H2 - hh)*0.85), h:hh, w:w - tw, s:b.v, bold:true}); }
+      if (b.v){ const hh = fitH(b.v, H2, w - tw, true); it.push({k:"text", x:x0 + tw, y: y + Math.round((H2 - hh)*0.85), h:hh, w:w - tw, s:b.v, bold:true}); }
       y += H2;
-      if (b.bc){ y += g1; barcode(b, b.v, x0, y, w); y += b.h; }
+      if (b.bc){ y += g1; if (b.draw) barcode(b, b.v, x0, y, w); y += b.h; }
     }
     return y;
   };
@@ -605,11 +601,17 @@ function layout(d, lp){
   if (qm){
     const x0 = M + leftW + colGap;
     const bottom = Math.max(y, yLow + rightH());
-    it.push({k:"vline", x: M + leftW + Math.round(colGap/2) - 1, y: yLow, h: Math.min(H - M, bottom) - yLow});
+    it.push({k:"vline", x: M + leftW + Math.round(colGap/2) - 1, y: yLow, h: Math.min(H - M, Math.max(bottom, y)) - yLow});
     let ry = yLow;
     const t = TITLES.loc; it.push({k:"text", x:x0, y:ry, h:S, w:colW, s:t, bold:true}); ry += S + g1;
-    const hh = fitH(d.loc, V, colW, true); it.push({k:"text", x:x0, y: ry + (V - hh), h:hh, w:colW, s:d.loc, bold:true}); ry += V + g1;
-    it.push({k:"qr", x:x0, y:ry, mag, m:qm, v:d.loc});
+    if (d.loc){ const hh = fitH(d.loc, V, colW, true); it.push({k:"text", x:x0, y: ry + (V - hh), h:hh, w:colW, s:d.loc, bold:true}); }
+    ry += V + g1;
+    const room = H - M - ry;
+    if (drawQR){
+      const qq = qrMatrix(d.loc) || qm; let mg = mag;
+      while (mg > 2 && qq.length*mg > Math.min(room, colW)) mg--;
+      it.push({k:"qr", x:x0, y:ry, mag:mg, m:qq, v:d.loc});
+    }
   }
   return {W, H, dpmm, items: it};
 }
@@ -1341,7 +1343,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.0.2";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
