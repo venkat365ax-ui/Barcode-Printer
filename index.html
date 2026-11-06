@@ -116,6 +116,7 @@
   .dapp .muted{padding:4px 12px;font-size:12px}
   .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#101828;color:#fff;padding:10px 14px;border-radius:12px;font-size:14px;display:flex;gap:12px;align-items:center;z-index:60;box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:92vw}
   .toast button{background:#fff;color:#101828;border:0;border-radius:8px;padding:6px 10px;font-weight:700}
+  .req{color:#d92d20}
   #printArea{display:none}
   @media print{
     body{background:#fff}
@@ -163,7 +164,7 @@
     <h2>Label details</h2>
 
     <div class="field">
-      <label for="item">Item code <span class="bc"><input type="checkbox" id="bc_item" checked> barcode</span></label>
+      <label for="item"><span>Item code <b class="req">*</b></span> <span class="bc"><input type="checkbox" id="bc_item" checked> barcode</span></label>
       <div class="inwrap" style="position:relative"><input type="text" id="item" autocomplete="off" autocorrect="off" spellcheck="false" autocapitalize="characters" placeholder="Type item code or name"><button type="button" class="scan" data-f="item" aria-label="Scan with camera">📷</button>
         <div id="sugg" class="sugg" role="listbox"></div></div>
       <div id="itemInfo" class="iteminfo"></div>
@@ -172,7 +173,7 @@
 
     <div class="row">
       <div class="field">
-        <label for="qty">Qty</label>
+        <label for="qty"><span>Qty <b class="req">*</b></span></label>
         <div class="inwrap"><input type="text" id="qty" inputmode="decimal" autocomplete="off" placeholder="e.g. 500"><button type="button" class="scan" data-f="qty" aria-label="Scan with camera">📷</button></div>
         <div class="err" id="err_qty"></div>
       </div>
@@ -196,7 +197,7 @@
 
     <div>
       <div class="field">
-        <label for="loc">Location <span class="bc"><input type="checkbox" id="bc_loc" checked> barcode</span></label>
+        <label for="loc"><span>Location <b class="req">*</b></span> <span class="bc"><input type="checkbox" id="bc_loc" checked> barcode</span></label>
         <div class="inwrap"><input type="text" id="loc" autocomplete="off" autocapitalize="characters" placeholder="e.g. CNC-IN"><button type="button" class="scan" data-f="loc" aria-label="Scan with camera">📷</button></div>
         <div class="err" id="err_loc"></div>
       </div>
@@ -703,8 +704,10 @@ function validate(d, showRequired){
   if (showRequired){
     if (!d.item) check("item", "Item code is required.");
     if (!d.qty) check("qty", "Qty is required.");
+    if (!d.loc) check("loc", "Location is required.");
   }
   if (d.qty && isNaN(Number(d.qty))) check("qty", "Qty should be a number.");
+  else if (d.qty && Number(d.qty) <= 0) check("qty", "Qty must be more than 0.");
   return ok;
 }
 
@@ -792,7 +795,12 @@ async function btSend(text){
 /* ---------------- Print ---------------- */
 async function doPrint(){
   const d = readForm();
-  if (!validate(d, true)){ window.scrollTo({top:0, behavior:"smooth"}); return; }
+  if (!validate(d, true)){
+    const first = ["item","qty","loc","batch","lp"].find(f => $(f).classList.contains("bad"));
+    if (first){ $(first).scrollIntoView({behavior:"smooth", block:"center"}); setTimeout(() => $(first).focus(), 300); }
+    showToast("Fill in Item code, Qty and Location to print.");
+    return;
+  }
   const copies = Math.min(200, Math.max(1, parseInt($("copies").value) || 1));
   const inc = $("increment").checked && d.lp;
   if ($("method").value === "bt"){
@@ -1227,7 +1235,7 @@ const ZH = {
   "Use it":"使用", "No matching item in the list":"清单中没有匹配的物料",
   "⚠ Not in item list. Check the code.":"⚠ 不在物料清单中，请检查编码。",
   "In item list":"在物料清单中",
-  "Item code is required.":"请填写物料编码。", "Qty is required.":"请填写数量。", "Qty should be a number.":"数量必须是数字。",
+  "Item code is required.":"请填写物料编码。", "Location is required.":"请填写库位。", "Qty must be more than 0.":"数量必须大于 0。", "Fill in Item code, Qty and Location to print.":"请填写物料编码、数量和库位后再打印。", "Qty is required.":"请填写数量。", "Qty should be a number.":"数量必须是数字。",
   "Use only standard letters, numbers and symbols.":"只能使用标准字母、数字和符号。",
   "Searching for printer…":"正在搜索打印机…", "Sending to printer…":"正在发送到打印机…",
   "Printer disconnected. Tap Connect again.":"打印机已断开，请重新点击“连接打印机”。",
@@ -1333,7 +1341,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.0.1";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
