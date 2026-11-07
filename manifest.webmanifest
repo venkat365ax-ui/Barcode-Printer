@@ -1,6 +1,6 @@
 {
-  "name": "Label Printer 标签打印",
-  "short_name": "Label Printer",
+  "name": "StockTag 盘点标签",
+  "short_name": "StockTag",
   "description": "Print warehouse labels to the Zebra ZR328 by Bluetooth.",
   "id": "./",
   "start_url": "./",

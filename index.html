@@ -7,12 +7,12 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Label Printer">
-<meta name="application-name" content="Label Printer">
+<meta name="apple-mobile-web-app-title" content="StockTag">
+<meta name="application-name" content="StockTag">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/favicon-64.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<title>Label Printer</title>
+<title>StockTag 盘点标签</title>
 <style id="pageStyle">@page { size: 100mm 75mm; margin: 0; }</style>
 <style>
   :root{--ink:#1b2430;--muted:#667085;--line:#d0d5dd;--brand:#1f3a5f;--bg:#f4f6f8;}
@@ -151,7 +151,7 @@
 </header>
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" aria-hidden="true">
-  <div class="dhead"><div class="dlogo">🏷️</div><div><b>Label Printer</b><br><span class="muted">Zebra ZR328</span></div></div>
+  <div class="dhead"><div class="dlogo">🏷️</div><div><b>StockTag</b><br><span class="muted">盘点标签 · Labels &amp; counting</span></div></div>
   <nav class="dnav">
     <button type="button" class="mi on" data-tab="label"><span class="ic">🏷️</span><span>Label</span></button>
     <button type="button" class="mi" data-tab="count"><span class="ic">📋</span><span>Count</span></button>
@@ -955,12 +955,12 @@ function showPrinterPicker(devs){
   });
 }
 async function nativePick(){
-  if (!(await nativeEnsurePermission())){ btMsg("Bluetooth permission was not allowed. Allow it in phone Settings → Apps → Label Printer → Permissions."); return false; }
+  if (!(await nativeEnsurePermission())){ btMsg("Bluetooth permission was not allowed. Allow it in phone Settings → Apps → StockTag → Permissions."); return false; }
   let r; try { r = JSON.parse(AndroidPrinter.listPrinters()); } catch(e){ r = {ok:false, error:String(e)}; }
   if (!r.ok){
     btMsg({"bluetooth-off":"Bluetooth is off. Turn it on, then tap Connect printer again.",
            "no-bluetooth":"This phone has no Bluetooth.",
-           "permission":"Bluetooth permission was not allowed. Allow it in phone Settings → Apps → Label Printer → Permissions."}[r.error] || ("Couldn't read paired printers: " + r.error));
+           "permission":"Bluetooth permission was not allowed. Allow it in phone Settings → Apps → StockTag → Permissions."}[r.error] || ("Couldn't read paired printers: " + r.error));
     return false;
   }
   const devs = r.devices.map(d => ({...d, ble: false}));
@@ -1985,7 +1985,7 @@ $("cfgTest").addEventListener("click", async () => {
   readCfg(); updateSheetStatus();
   if (!cfgOk()){ $("cfgMsg").textContent = "Paste the Webhook address first."; return; }
   $("cfgMsg").textContent = "Sending test row…";
-  const rec = {tag: "TEST-" + dayKey(Date.now()), team: $("c_team").value || "T01", loc: "TEST", item: "TEST", qty: "0", unit: "", lp: "", batch: "", counter: $("c_name").value || "test", time: Date.now(), notes: "Test row from Label Printer app, delete it"};
+  const rec = {tag: "TEST-" + dayKey(Date.now()), team: $("c_team").value || "T01", loc: "TEST", item: "TEST", qty: "0", unit: "", lp: "", batch: "", counter: $("c_name").value || "test", time: Date.now(), notes: "Test row from StockTag app, delete it"};
   try {
     const j = await httpPostJson(CFG.url, {add_records: [{values: recordValues(rec, false)}]});
     $("cfgMsg").textContent = j && j.errcode === 0 ? "✅ Test row added. Check the Smart Sheet, then delete the test row." : "❌ " + wecomErr(j || {});
@@ -2051,7 +2051,7 @@ const ZH = {
   "Text":"文本", "(not sent)":"（不发送）",
   "Tag no.":"标签号", "Status":"状态", "License plate":"托盘号 (LP)", "Batch":"批次", "Count time":"盘点时间", "Photo":"照片", "Item":"物料",
   "Label":"标签", "Printer setup":"打印机设置", "Item list":"物料清单", "History":"打印记录", "Language":"语言",
-  "Label Printer":"标签打印", "Fill in the fields, check the preview, then tap Print":"填写信息，检查预览，然后点击打印",
+  "StockTag":"StockTag", "盘点标签 · Labels & counting":"盘点标签 · 标签打印与盘点", "Fill in the fields, check the preview, then tap Print":"填写信息，检查预览，然后点击打印",
   "Connect the Zebra and choose the label size":"连接斑马打印机并选择标签尺寸",
   "Search items and update the D365 list":"搜索物料并更新 D365 清单",
   "Labels printed on this phone":"本手机打印过的标签",
@@ -2082,7 +2082,7 @@ const ZH = {
   "Print history":"打印记录", "Clear":"清空", "Printed labels show here so you can reprint quickly.":"打印过的标签会显示在这里，方便快速重新打印。",
   "🖨 Print":"🖨 打印", "Point the camera at the barcode":"请将摄像头对准条码", "🔤 Read text":"🔤 识别文字",
   "📸 Take photo":"📸 拍照", "Cancel":"取消", "Type item code or name":"输入物料编码或名称",
-  "Scan with camera":"用摄像头扫描", "Open menu":"打开菜单", "Choose your printer":"选择打印机", "Paired and nearby Bluetooth devices":"本手机已配对的蓝牙设备", "🔁 Change printer":"🔁 更换打印机", "Pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer.":"请先在手机“设置 → 蓝牙”中配对 ZR328，然后点击“连接打印机”。", "Bluetooth is off. Turn it on, then tap Connect printer again.":"蓝牙已关闭，请打开蓝牙后再次点击“连接打印机”。", "No paired printers. First pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer again.":"没有已配对的打印机。请先在手机“设置 → 蓝牙”中配对 ZR328，然后再次点击“连接打印机”。", "Bluetooth permission was not allowed. Allow it in phone Settings → Apps → Label Printer → Permissions.":"未允许蓝牙权限。请在手机“设置 → 应用 → Label Printer → 权限”中允许。", "This phone has no Bluetooth.":"此手机没有蓝牙。", "Install app":"安装应用", "To install: tap Share, then Add to Home Screen.":"安装方法：点击“分享”，然后选择“添加到主屏幕”。", "App installed":"应用已安装", "A new version is available.":"有新版本可用。", "Update":"更新", "Switch language":"切换语言",
+  "Scan with camera":"用摄像头扫描", "Open menu":"打开菜单", "Choose your printer":"选择打印机", "Paired and nearby Bluetooth devices":"已配对和附近的蓝牙设备", "🔁 Change printer":"🔁 更换打印机", "Pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer.":"请先在手机“设置 → 蓝牙”中配对 ZR328，然后点击“连接打印机”。", "Bluetooth is off. Turn it on, then tap Connect printer again.":"蓝牙已关闭，请打开蓝牙后再次点击“连接打印机”。", "No paired printers. First pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer again.":"没有已配对的打印机。请先在手机“设置 → 蓝牙”中配对 ZR328，然后再次点击“连接打印机”。", "Bluetooth permission was not allowed. Allow it in phone Settings → Apps → StockTag → Permissions.":"未允许蓝牙权限。请在手机“设置 → 应用 → Label Printer → 权限”中允许。", "This phone has no Bluetooth.":"此手机没有蓝牙。", "Install app":"安装应用", "To install: tap Share, then Add to Home Screen.":"安装方法：点击“分享”，然后选择“添加到主屏幕”。", "App installed":"应用已安装", "A new version is available.":"有新版本可用。", "Update":"更新", "Switch language":"切换语言",
   "e.g. 500":"例如 500", "e.g. B-2611-001":"例如 B-2611-001", "e.g. LP000123":"例如 LP000123", "e.g. CNC-IN":"例如 CNC-IN",
   "Use it":"使用", "No matching item in the list":"清单中没有匹配的物料",
   "⚠ Not in item list. Check the code.":"⚠ 不在物料清单中，请检查编码。",
@@ -2210,7 +2210,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.1.4";
+const APP_VERSION = "1.2.0";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;

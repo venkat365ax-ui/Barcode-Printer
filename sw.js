@@ -1,5 +1,5 @@
-/* Label Printer service worker: works offline, updates in the background. */
-const VERSION = "lp-1.1.4";
+/* StockTag service worker: works offline, updates in the background. */
+const VERSION = "lp-1.2.0";
 const CORE = [
   "./",
   "./index.html",
