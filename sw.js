@@ -1,5 +1,5 @@
 /* Label Printer service worker: works offline, updates in the background. */
-const VERSION = "lp-1.1.0";
+const VERSION = "lp-1.1.1";
 const CORE = [
   "./",
   "./index.html",

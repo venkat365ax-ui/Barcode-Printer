@@ -6,6 +6,22 @@ import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattService;
+import android.bluetooth.BluetoothProfile;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanRecord;
+import android.bluetooth.le.ScanResult;
+import android.bluetooth.le.ScanSettings;
+import android.os.ParcelUuid;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -55,6 +71,9 @@ public class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
     private static final String START_URL = "https://" + HOST + "/index.html";
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    // Zebra Bluetooth LE "parser" service: the same one the web page uses in Chrome
+    private static final UUID ZEBRA_SVC = UUID.fromString("38eb4a80-c570-11e3-9507-0002a5d5c51b");
+    private static final UUID ZEBRA_WRITE = UUID.fromString("38eb4a82-c570-11e3-9507-0002a5d5c51b");
 
     private static final int REQ_FILE = 1;
     private static final int REQ_CAMERA = 2;
@@ -174,7 +193,8 @@ public class MainActivity extends Activity {
             else pendingCameraRequest.deny();
             pendingCameraRequest = null;
         } else if (requestCode == REQ_BLUETOOTH && pendingBluetoothCallback != null) {
-            callJs(pendingBluetoothCallback, granted, granted ? "" : "permission-denied");
+            boolean ok = hasBluetoothPermission();   // nearby search is optional; printing needs "connect"
+            callJs(pendingBluetoothCallback, ok, ok ? "" : "permission-denied");
             pendingBluetoothCallback = null;
         }
     }
@@ -201,11 +221,97 @@ public class MainActivity extends Activity {
         ui.post(() -> web.evaluateJavascript(script, null));
     }
 
+    private String[] bluetoothPermissions() {
+        if (Build.VERSION.SDK_INT >= 31) return new String[]{Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN};
+        return new String[]{Manifest.permission.ACCESS_FINE_LOCATION};   // needed to search nearby on Android 11 and older
+    }
+
     private boolean hasBluetoothPermission() {
         if (Build.VERSION.SDK_INT >= 31) {
             return checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
         }
         return true;
+    }
+
+    private boolean hasScanPermission() {
+        for (String p : bluetoothPermissions()) if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) return false;
+        return true;
+    }
+
+    /* ---------- Bluetooth LE printing (Zebra parser service) ---------- */
+    private final Object bleLock = new Object();
+    private final Semaphore bleSig = new Semaphore(0);
+    private BluetoothGatt bleGatt;
+    private String bleAddr;
+    private BluetoothGattCharacteristic bleChar;
+    private volatile boolean bleConnected;
+    private volatile int bleMtu = 23;
+
+    private final BluetoothGattCallback bleCb = new BluetoothGattCallback() {
+        @Override public void onConnectionStateChange(BluetoothGatt g, int status, int newState) {
+            bleConnected = status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED;
+            if (!bleConnected) bleChar = null;
+            bleSig.release();
+        }
+        @Override public void onMtuChanged(BluetoothGatt g, int mtu, int status) {
+            if (status == BluetoothGatt.GATT_SUCCESS) bleMtu = mtu;
+            bleSig.release();
+        }
+        @Override public void onServicesDiscovered(BluetoothGatt g, int status) { bleSig.release(); }
+        @Override public void onCharacteristicWrite(BluetoothGatt g, BluetoothGattCharacteristic c, int status) { bleSig.release(); }
+    };
+
+    private boolean bleWait(long ms) throws InterruptedException { return bleSig.tryAcquire(ms, TimeUnit.MILLISECONDS); }
+
+    @SuppressLint("MissingPermission")
+    private void bleClose() {
+        if (bleGatt != null) { try { bleGatt.disconnect(); bleGatt.close(); } catch (Exception ignored) { } }
+        bleGatt = null; bleChar = null; bleConnected = false; bleAddr = null; bleMtu = 23;
+    }
+
+    @SuppressLint("MissingPermission")
+    private void bleConnect(String address) throws Exception {
+        if (bleGatt != null && address.equals(bleAddr) && bleConnected && bleChar != null) return;
+        bleClose();
+        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        if (adapter == null) throw new IOException("This phone has no Bluetooth");
+        if (!adapter.isEnabled()) throw new IOException("Bluetooth is off");
+        BluetoothDevice device = adapter.getRemoteDevice(address);
+        bleSig.drainPermits();
+        bleGatt = device.connectGatt(this, false, bleCb, BluetoothDevice.TRANSPORT_LE);
+        bleAddr = address;
+        if (!bleWait(15000) || !bleConnected) { bleClose(); throw new IOException("Couldn't connect to the printer"); }
+        bleSig.drainPermits();
+        if (bleGatt.requestMtu(512)) bleWait(5000);
+        bleSig.drainPermits();
+        if (!bleGatt.discoverServices() || !bleWait(10000)) { bleClose(); throw new IOException("The printer didn't answer"); }
+        BluetoothGattService svc = bleGatt.getService(ZEBRA_SVC);
+        BluetoothGattCharacteristic c = svc == null ? null : svc.getCharacteristic(ZEBRA_WRITE);
+        if (c == null) { bleClose(); throw new IOException("This device isn't a Zebra printer"); }
+        bleChar = c;
+    }
+
+    @SuppressLint("MissingPermission")
+    @SuppressWarnings("deprecation")
+    private void bleWrite(byte[] bytes) throws Exception {
+        boolean noResp = (bleChar.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0;
+        bleChar.setWriteType(noResp ? BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE : BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+        int chunk = Math.max(20, Math.min(bleMtu - 3, 509));
+        for (int off = 0; off < bytes.length; off += chunk) {
+            int n = Math.min(chunk, bytes.length - off);
+            byte[] part = new byte[n];
+            System.arraycopy(bytes, off, part, 0, n);
+            bleChar.setValue(part);
+            bleSig.drainPermits();
+            boolean started = false;
+            for (int tries = 0; tries < 20 && !started; tries++) {
+                started = bleGatt.writeCharacteristic(bleChar);
+                if (!started) Thread.sleep(25);
+            }
+            if (!started) throw new IOException("Couldn't send to the printer");
+            if (!bleWait(5000)) throw new IOException("The printer stopped answering");
+            if (!bleConnected) throw new IOException("Printer disconnected");
+        }
     }
 
     /** Methods the web page can call as window.AndroidPrinter.xxx() */
@@ -215,14 +321,14 @@ public class MainActivity extends Activity {
         public boolean isNative() { return true; }
 
         @JavascriptInterface
-        public boolean hasPermission() { return hasBluetoothPermission(); }
+        public boolean hasPermission() { return hasBluetoothPermission() && hasScanPermission(); }
 
         @JavascriptInterface
         public void requestPermission(final String callback) {
             ui.post(() -> {
-                if (hasBluetoothPermission()) { callJs(callback, true, ""); return; }
+                if (hasBluetoothPermission() && hasScanPermission()) { callJs(callback, true, ""); return; }
                 pendingBluetoothCallback = callback;
-                requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, REQ_BLUETOOTH);
+                requestPermissions(bluetoothPermissions(), REQ_BLUETOOTH);
             });
         }
 
@@ -249,6 +355,82 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return "{\"ok\":false,\"error\":" + JSONObject.quote(String.valueOf(e.getMessage())) + "}";
             }
+        }
+
+        /** Search nearby Bluetooth LE devices for ~6 s. Callback gets a JSON array [{name,address,zebra}]. */
+        @JavascriptInterface
+        @SuppressLint("MissingPermission")
+        public void scanBle(final String callback) {
+            new Thread(() -> {
+                try {
+                    if (!hasScanPermission()) throw new IOException("Nearby devices permission not allowed");
+                    BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+                    if (adapter == null || !adapter.isEnabled()) throw new IOException("Bluetooth is off");
+                    BluetoothLeScanner sc = adapter.getBluetoothLeScanner();
+                    if (sc == null) throw new IOException("Bluetooth LE search not available");
+                    final Map<String, JSONObject> found = new LinkedHashMap<>();
+                    ScanCallback cb = new ScanCallback() {
+                        @Override public void onScanResult(int type, ScanResult r) { add(r); }
+                        @Override public void onBatchScanResults(List<ScanResult> rs) { for (ScanResult r : rs) add(r); }
+                        private void add(ScanResult r) {
+                            try {
+                                BluetoothDevice d = r.getDevice();
+                                ScanRecord rec = r.getScanRecord();
+                                String name = rec != null ? rec.getDeviceName() : null;
+                                if (name == null) { try { name = d.getName(); } catch (SecurityException ignored) { } }
+                                boolean zebra = false;
+                                if (rec != null && rec.getServiceUuids() != null) {
+                                    for (ParcelUuid u : rec.getServiceUuids()) if (ZEBRA_SVC.equals(u.getUuid())) zebra = true;
+                                }
+                                if ((name == null || name.isEmpty()) && !zebra) return;   // skip unnamed devices
+                                synchronized (found) {
+                                    found.put(d.getAddress(), new JSONObject().put("name", name == null ? "Zebra printer" : name)
+                                            .put("address", d.getAddress()).put("zebra", zebra));
+                                }
+                            } catch (Exception ignored) { }
+                        }
+                    };
+                    ScanSettings set = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
+                    sc.startScan(null, set, cb);
+                    Thread.sleep(6000);
+                    try { sc.stopScan(cb); } catch (Exception ignored) { }
+                    JSONArray arr = new JSONArray();
+                    synchronized (found) { for (JSONObject o : found.values()) arr.put(o); }
+                    callJs(callback, true, arr.toString());
+                } catch (SecurityException e) {
+                    callJs(callback, false, "Nearby devices permission not allowed");
+                } catch (Exception e) {
+                    callJs(callback, false, String.valueOf(e.getMessage()));
+                }
+            }).start();
+        }
+
+        /** Send ZPL to a Zebra printer over Bluetooth LE (no pairing needed). */
+        @JavascriptInterface
+        public void printBle(final String address, final String data, final String callback) {
+            new Thread(() -> {
+                synchronized (bleLock) {
+                    try {
+                        byte[] bytes = data.getBytes(StandardCharsets.UTF_8);
+                        try {
+                            bleConnect(address);
+                            bleWrite(bytes);
+                        } catch (IOException first) {
+                            bleClose();             // one retry with a fresh connection
+                            bleConnect(address);
+                            bleWrite(bytes);
+                        }
+                        Thread.sleep(300);
+                        callJs(callback, true, "");
+                    } catch (SecurityException e) {
+                        bleClose();
+                        callJs(callback, false, "Bluetooth permission is missing");
+                    } catch (Exception e) {
+                        bleClose();
+                        callJs(callback, false, String.valueOf(e.getMessage()));
+                    }
+                }
+            }).start();
         }
 
         /** POST JSON to the WeCom Smart Sheet webhook (only that address is allowed). Callback gets the response body. */

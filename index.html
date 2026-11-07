@@ -907,13 +907,13 @@ function showPrinterPicker(devs){
     const h = document.createElement("div");
     h.style.cssText = "font-weight:700;font-size:17px;margin-bottom:4px"; h.textContent = "Choose your printer";
     const sub = document.createElement("div");
-    sub.className = "muted"; sub.style.marginBottom = "10px"; sub.textContent = "Paired Bluetooth devices on this phone";
+    sub.className = "muted"; sub.style.marginBottom = "10px"; sub.textContent = "Paired and nearby Bluetooth devices";
     box.appendChild(h); box.appendChild(sub);
     devs.forEach(d => {
       const b = document.createElement("button"); b.type = "button";
       b.style.cssText = "display:block;width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:10px;padding:12px;margin-bottom:8px;font-size:16px";
       const n = document.createElement("b"); n.textContent = d.name || "(no name)";
-      const a = document.createElement("div"); a.className = "muted"; a.textContent = d.address;
+      const a = document.createElement("div"); a.className = "muted"; a.textContent = d.address + (d.ble ? " · nearby (Bluetooth LE)" : " · paired");
       b.appendChild(n); b.appendChild(a);
       b.onclick = () => { wrap.remove(); resolve(d); };
       box.appendChild(b);
@@ -936,13 +936,24 @@ async function nativePick(){
            "permission":"Bluetooth permission was not allowed. Allow it in phone Settings → Apps → Label Printer → Permissions."}[r.error] || ("Couldn't read paired printers: " + r.error));
     return false;
   }
-  const isZebra = d => /zebra|zr\d|zq\d|xx/i.test(d.name || "");
-  const devs = r.devices.slice().sort((a, b) => isZebra(b) - isZebra(a));
-  if (!devs.length){ btMsg("No paired printers. First pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer again."); return false; }
+  const devs = r.devices.map(d => ({...d, ble: false}));
+  // Also search nearby Bluetooth LE printers (same way the web link connects, no pairing needed)
+  if (AndroidPrinter.scanBle){
+    btMsg("Searching for nearby printers… (about 6 seconds)");
+    const s = await nativeCall(cb => AndroidPrinter.scanBle(cb));
+    if (s.ok){
+      let found = []; try { found = JSON.parse(s.msg); } catch(e){}
+      for (const d of found) if (!devs.some(x => x.address === d.address && !x.ble)) devs.push({...d, ble: true});
+    } else btMsg("Nearby search failed: " + (s.msg || "unknown") + ". Showing paired devices only.");
+  }
+  const isZebra = d => d.zebra || /zebra|zr\d|zq\d|^xx/i.test(d.name || "");
+  devs.sort((a, b) => isZebra(b) - isZebra(a));
+  if (!devs.length){ btMsg("No printer found. Turn the ZR328 on, keep it close, and tap Connect printer again."); return false; }
+  btMsg("Choose your printer");
   const pick = await showPrinterPicker(devs);
-  if (!pick) return false;
-  nativePrinter = pick;
-  try { localStorage.setItem("lbl_native_printer", JSON.stringify(pick)); } catch(e){}
+  if (!pick){ btMsg(nativePrinter ? "✅ Printer selected: " + printerName() : "No printer selected."); return false; }
+  nativePrinter = {name: pick.name, address: pick.address, ble: !!pick.ble};
+  try { localStorage.setItem("lbl_native_printer", JSON.stringify(nativePrinter)); } catch(e){}
   btMsg("✅ Printer selected: " + printerName());
   $("connectBtn").textContent = "🔁 Change printer";
   updatePrinterStatus();
@@ -950,7 +961,8 @@ async function nativePick(){
 }
 async function nativeSend(text){
   if (!nativePrinter && !(await nativePick())) return false;
-  const r = await nativeCall(cb => AndroidPrinter.print(nativePrinter.address, text, cb));
+  const ble = nativePrinter.ble && AndroidPrinter.printBle;
+  const r = await nativeCall(cb => ble ? AndroidPrinter.printBle(nativePrinter.address, text, cb) : AndroidPrinter.print(nativePrinter.address, text, cb));
   if (!r.ok) throw new Error((r.msg || "no answer") + ". Check the printer is on, nearby and not connected to another phone.");
   return true;
 }
@@ -1930,6 +1942,8 @@ setInterval(() => {
 
 /* ---------------- Language (English / 中文) ---------------- */
 const ZH = {
+  "Paired and nearby Bluetooth devices":"已配对和附近的蓝牙设备", "Searching for nearby printers… (about 6 seconds)":"正在搜索附近的打印机…（约 6 秒）",
+  "No printer selected.":"未选择打印机。", "No printer found. Turn the ZR328 on, keep it close, and tap Connect printer again.":"未找到打印机。请打开 ZR328，靠近手机，然后重新点击“连接打印机”。",
   "Count":"盘点", "Count stock, print the count label and send it to WeCom":"盘点库存，打印盘点标签并发送到企业微信",
   "WeCom Smart Sheet not connected":"未连接企业微信智能表格",
   "WeCom Smart Sheet not connected. Counts are kept on this phone.":"未连接企业微信智能表格，盘点记录保存在本手机。",
@@ -1994,7 +2008,7 @@ const ZH = {
   "Print history":"打印记录", "Clear":"清空", "Printed labels show here so you can reprint quickly.":"打印过的标签会显示在这里，方便快速重新打印。",
   "🖨 Print":"🖨 打印", "Point the camera at the barcode":"请将摄像头对准条码", "🔤 Read text":"🔤 识别文字",
   "📸 Take photo":"📸 拍照", "Cancel":"取消", "Type item code or name":"输入物料编码或名称",
-  "Scan with camera":"用摄像头扫描", "Open menu":"打开菜单", "Choose your printer":"选择打印机", "Paired Bluetooth devices on this phone":"本手机已配对的蓝牙设备", "🔁 Change printer":"🔁 更换打印机", "Pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer.":"请先在手机“设置 → 蓝牙”中配对 ZR328，然后点击“连接打印机”。", "Bluetooth is off. Turn it on, then tap Connect printer again.":"蓝牙已关闭，请打开蓝牙后再次点击“连接打印机”。", "No paired printers. First pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer again.":"没有已配对的打印机。请先在手机“设置 → 蓝牙”中配对 ZR328，然后再次点击“连接打印机”。", "Bluetooth permission was not allowed. Allow it in phone Settings → Apps → Label Printer → Permissions.":"未允许蓝牙权限。请在手机“设置 → 应用 → Label Printer → 权限”中允许。", "This phone has no Bluetooth.":"此手机没有蓝牙。", "Install app":"安装应用", "To install: tap Share, then Add to Home Screen.":"安装方法：点击“分享”，然后选择“添加到主屏幕”。", "App installed":"应用已安装", "A new version is available.":"有新版本可用。", "Update":"更新", "Switch language":"切换语言",
+  "Scan with camera":"用摄像头扫描", "Open menu":"打开菜单", "Choose your printer":"选择打印机", "Paired and nearby Bluetooth devices":"本手机已配对的蓝牙设备", "🔁 Change printer":"🔁 更换打印机", "Pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer.":"请先在手机“设置 → 蓝牙”中配对 ZR328，然后点击“连接打印机”。", "Bluetooth is off. Turn it on, then tap Connect printer again.":"蓝牙已关闭，请打开蓝牙后再次点击“连接打印机”。", "No paired printers. First pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer again.":"没有已配对的打印机。请先在手机“设置 → 蓝牙”中配对 ZR328，然后再次点击“连接打印机”。", "Bluetooth permission was not allowed. Allow it in phone Settings → Apps → Label Printer → Permissions.":"未允许蓝牙权限。请在手机“设置 → 应用 → Label Printer → 权限”中允许。", "This phone has no Bluetooth.":"此手机没有蓝牙。", "Install app":"安装应用", "To install: tap Share, then Add to Home Screen.":"安装方法：点击“分享”，然后选择“添加到主屏幕”。", "App installed":"应用已安装", "A new version is available.":"有新版本可用。", "Update":"更新", "Switch language":"切换语言",
   "e.g. 500":"例如 500", "e.g. B-2611-001":"例如 B-2611-001", "e.g. LP000123":"例如 LP000123", "e.g. CNC-IN":"例如 CNC-IN",
   "Use it":"使用", "No matching item in the list":"清单中没有匹配的物料",
   "⚠ Not in item list. Check the code.":"⚠ 不在物料清单中，请检查编码。",
@@ -2018,6 +2032,9 @@ const ZH = {
 };
 const ZH_FIELD = {"item code":"物料编码", "qty":"数量", "batch number":"批次号", "license plate":"托盘号", "location":"库位"};
 const ZH_RX = [
+  [/^(.*) · nearby \(Bluetooth LE\)$/, m => `${m[1]} · 附近（低功耗蓝牙）`],
+  [/^(.*) · paired$/, m => `${m[1]} · 已配对`],
+  [/^Nearby search failed: (.*)\. Showing paired devices only\.$/, m => `附近搜索失败：${m[1]}。仅显示已配对设备。`],
   [/^Next tag (.*) · (\d+) × (\d+) mm$/, m => `下一个标签号 ${m[1]} · ${m[2]} × ${m[3]} mm`],
   [/^(\d+) counts · (\d+) waiting$/, m => `${m[1]} 条 · ${m[2]} 条待发送`],
   [/^⚠ Already counted today: (.*), qty (.*)\. Tap Submit again to add another count\.$/, m => `⚠ 今天已盘点过：${m[1]}，数量 ${m[2]}。再次点击提交可新增一条盘点。`],
@@ -2119,7 +2136,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.1.1";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
