@@ -1685,9 +1685,24 @@ function wecomErr(j){
   return `WeCom error ${j.errcode}: ${j.errmsg || "unknown"}. Check the Webhook address and column names`;
 }
 let sending = false;
+function smallPhoto(dataUrl, max, q){   // smaller copy just for WeCom (the phone keeps the full photo)
+  return new Promise(ok => {
+    const img = new Image();
+    img.onload = () => { const s = Math.min(1, max / Math.max(img.width, img.height)); const c = document.createElement("canvas");
+      c.width = Math.round(img.width*s); c.height = Math.round(img.height*s); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); ok(c.toDataURL("image/jpeg", q)); };
+    img.onerror = () => ok(dataUrl); img.src = dataUrl;
+  });
+}
+async function photoValues(rec){ return recordValues({...rec, photo: await smallPhoto(rec.photo, 900, 0.6)}, true); }
 async function sendOne(rec){
   if (!rec.sent){
-    const j = await httpPostJson(CFG.url, {add_records: [{values: recordValues(rec, false)}]});
+    let values = recordValues(rec, false), withPhoto = false;
+    if (rec.photo && !rec.photoSent && photoFieldOk()){ Object.assign(values, await photoValues(rec)); withPhoto = true; }
+    let j = await httpPostJson(CFG.url, {add_records: [{values}]});
+    if (withPhoto && (!j || j.errcode !== 0)){            // photo refused: still send the count without it
+      rec.photoErr = "Photo: " + wecomErr(j || {}); rec.photoSent = "failed";
+      j = await httpPostJson(CFG.url, {add_records: [{values: recordValues(rec, false)}]});
+    } else if (withPhoto){ rec.photoSent = true; rec.photoErr = ""; }
     if (!j || j.errcode !== 0) throw new Error(wecomErr(j || {}));
     rec.sent = true; rec.sentAt = Date.now();
     rec.recordId = j.add_records && j.add_records[0] && j.add_records[0].record_id || "";
@@ -1695,7 +1710,7 @@ async function sendOne(rec){
   }
   if (rec.photo && !rec.photoSent && photoFieldOk()){
     if (!rec.recordId) throw new Error("WeCom did not return the row ID, so the photo can't be added");
-    const j = await httpPostJson(CFG.url, {update_records: [{record_id: rec.recordId, values: recordValues(rec, true)}]});
+    const j = await httpPostJson(CFG.url, {update_records: [{record_id: rec.recordId, values: await photoValues(rec)}]});
     if (!j || j.errcode !== 0){ rec.photoErr = "Photo: " + wecomErr(j || {}); rec.photoSent = "failed"; await CDB.put(rec); throw new Error(rec.photoErr); }
     rec.photoSent = true; rec.photoErr = ""; await CDB.put(rec);
   }
@@ -1707,7 +1722,7 @@ async function sendWaiting(manual){
   sending = true;
   let ok = 0, bad = 0, lastErr = "";
   try {
-    const list = (await CDB.all()).filter(r => !r.sent || (r.photo && !r.photoSent && photoFieldOk())).reverse();
+    const list = (await CDB.all()).filter(r => !(r.hold && Date.now() - r.time < 10*60000) && (!r.sent || (r.photo && !r.photoSent && photoFieldOk()))).reverse();
     for (const r of list){
       try { await sendOne(r); ok++; }
       catch(e){ bad++; lastErr = e.message || String(e); r.err = lastErr; await CDB.put(r); if (/No internet|blocked/.test(lastErr)) break; }
@@ -1822,7 +1837,8 @@ async function submitCount(){
   submitting = true; $("countBtn").disabled = true;
   const now = Date.now(), t = nextTag(c.team, now);
   const rec = {tag: t.tag, time: now, team: c.team, counter: c.counter, loc: c.loc.toUpperCase(), item: c.item, name: c.name, qty: c.qty, unit: c.unit.toUpperCase(),
-               lp: c.lp.toUpperCase(), batch: c.batch.toUpperCase(), notes: c.notes, sent: false, photo: null, photoSent: false, printed: false, err: ""};
+               lp: c.lp.toUpperCase(), batch: c.batch.toUpperCase(), notes: c.notes, sent: false, photo: null, photoSent: false, printed: false, err: "",
+               hold: CFG.photo !== false && photoFieldOk()};
   useTag(t.key, t.n);
   await CDB.put(rec);
   let printMsg = "";
@@ -1862,10 +1878,11 @@ function showPhotoPrompt(rec, printMsg){
   if (LANG === "zh") trTree(ov);
   const close = () => ov.remove();
   $("ppTake").onclick = () => { close(); takePhotoFor(rec.tag); };
-  $("ppSkip").onclick = () => { close(); showToast(`${rec.tag}: no photo. You can add it later from the list.`); $("c_item").focus(); };
+  $("ppSkip").onclick = async () => { close(); await releaseHold(rec.tag); showToast(`${rec.tag}: no photo. You can add it later from the list.`); $("c_item").focus(); };
   if ($("ppReprint")) $("ppReprint").onclick = async () => { await reprintCount(rec.tag); const r = (await CDB.all()).find(x => x.tag === rec.tag); if (r && r.printed){ close(); showPhotoPrompt(r, ""); } };
 }
 let photoFor = null;
+async function releaseHold(tag){ const r = (await CDB.all()).find(x => x.tag === tag); if (r && r.hold){ r.hold = false; await CDB.put(r); } sendWaiting(false).then(renderCounts); }
 function takePhotoFor(tag){ photoFor = tag; $("c_photoInput").value = ""; $("c_photoInput").click(); }
 function shrinkPhoto(file){
   return new Promise((ok, no) => {
@@ -1883,14 +1900,14 @@ function shrinkPhoto(file){
 }
 $("c_photoInput").addEventListener("change", async e => {
   const f = e.target.files[0], tag = photoFor; photoFor = null;
-  if (!f || !tag) return;
+  if (!f || !tag){ if (tag) releaseHold(tag); return; }
   try {
     const rec = (await CDB.all()).find(r => r.tag === tag); if (!rec) return;
-    rec.photo = await shrinkPhoto(f); rec.photoExported = false; rec.hadPhoto = true; rec.photoSent = false; rec.photoErr = "";
+    rec.photo = await shrinkPhoto(f); rec.photoExported = false; rec.hadPhoto = true; rec.photoSent = false; rec.photoErr = ""; rec.hold = false;
     await CDB.put(rec); await renderCounts();
     showToast(`📷 Photo added to ${tag}`);
-    if (photoFieldOk()) sendWaiting(false).then(renderCounts);
-  } catch(err){ showToast(err.message || String(err)); }
+    sendWaiting(false).then(renderCounts);
+  } catch(err){ showToast(err.message || String(err)); releaseHold(tag); }
   $("c_item").focus();
 });
 
@@ -2308,7 +2325,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.2.4";
+const APP_VERSION = "1.2.5";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
