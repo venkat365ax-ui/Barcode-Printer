@@ -1,4 +1,4 @@
-# Builds the Label Printer Android app (APK) whenever index.html or the android folder changes.
+# Builds the StockTag Android app (APK) whenever index.html or the android folder changes.
 # The finished APK appears under "Releases" on the repository page.
 name: Build Android APK
 
@@ -47,21 +47,21 @@ jobs:
         run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: Name the APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk LabelPrinter.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk StockTag.apk
 
       - name: Keep a copy with this run
         uses: actions/upload-artifact@v4
         with:
-          name: LabelPrinter-apk
-          path: LabelPrinter.apk
+          name: StockTag-apk
+          path: StockTag.apk
 
       - name: Publish the APK as a release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-${{ github.run_number }}
-          name: Label Printer APK (build ${{ github.run_number }})
+          name: StockTag APK (build ${{ github.run_number }})
           make_latest: true
-          files: LabelPrinter.apk
+          files: StockTag.apk
           body: |
-            Download **LabelPrinter.apk** below, send it to the phones (for example in WeCom) and install it.
+            Download **StockTag.apk** below, send it to the phones (for example in WeCom) and install it.
             Pair the Zebra ZR328 in phone Settings → Bluetooth first, then open the app → Printer setup → Connect printer.
