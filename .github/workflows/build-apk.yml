@@ -1,0 +1,65 @@
+# Builds the Label Printer Android app (APK) whenever index.html or the android folder changes.
+# The finished APK appears under "Releases" on the repository page.
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'index.html'
+      - 'android/**'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the files
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up the Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Put the latest app page inside the APK
+        run: |
+          mkdir -p android/app/src/main/assets
+          cp index.html android/app/src/main/assets/index.html
+
+      - name: Build the APK
+        working-directory: android
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk LabelPrinter.apk
+
+      - name: Keep a copy with this run
+        uses: actions/upload-artifact@v4
+        with:
+          name: LabelPrinter-apk
+          path: LabelPrinter.apk
+
+      - name: Publish the APK as a release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: Label Printer APK (build ${{ github.run_number }})
+          make_latest: true
+          files: LabelPrinter.apk
+          body: |
+            Download **LabelPrinter.apk** below, send it to the phones (for example in WeCom) and install it.
+            Pair the Zebra ZR328 in phone Settings → Bluetooth first, then open the app → Printer setup → Connect printer.
