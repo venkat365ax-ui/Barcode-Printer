@@ -1,0 +1,38 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.venkat.labelprinter'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.venkat.labelprinter'
+        minSdk 24
+        targetSdk 34
+        versionCode 3
+        versionName '1.0.2'
+    }
+
+    signingConfigs {
+        release {
+            // Fixed key so new APKs install over old ones without uninstalling.
+            storeFile file('labelprinter.keystore')
+            storePassword 'labelprinter'
+            keyAlias 'labelprinter'
+            keyPassword 'labelprinter'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

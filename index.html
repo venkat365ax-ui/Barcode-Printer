@@ -755,12 +755,88 @@ function fill(d){
   render();
 }
 
+/* ---------------- Native app (APK) printing over classic Bluetooth ---------------- */
+const NATIVE = !!(window.AndroidPrinter && window.AndroidPrinter.isNative);
+let nativePrinter = null;
+try { nativePrinter = JSON.parse(localStorage.getItem("lbl_native_printer") || "null"); } catch(e){}
+let nativeSeq = 0;
+function nativeCall(start){
+  return new Promise(resolve => {
+    const name = "__nativeCb" + (++nativeSeq);
+    window[name] = (ok, msg) => { delete window[name]; resolve({ok, msg}); };
+    start(name);
+  });
+}
+function printerName(){ return NATIVE ? (nativePrinter && (nativePrinter.name || nativePrinter.address)) || "printer" : (btDevice && btDevice.name) || "printer"; }
+async function nativeEnsurePermission(){
+  if (AndroidPrinter.hasPermission()) return true;
+  const r = await nativeCall(cb => AndroidPrinter.requestPermission(cb));
+  return r.ok;
+}
+function showPrinterPicker(devs){
+  return new Promise(resolve => {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "position:fixed;inset:0;background:rgba(16,24,40,.5);z-index:70;display:flex;align-items:flex-end;justify-content:center";
+    const box = document.createElement("div");
+    box.style.cssText = "background:#fff;width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-height:75vh;overflow-y:auto";
+    const h = document.createElement("div");
+    h.style.cssText = "font-weight:700;font-size:17px;margin-bottom:4px"; h.textContent = "Choose your printer";
+    const sub = document.createElement("div");
+    sub.className = "muted"; sub.style.marginBottom = "10px"; sub.textContent = "Paired Bluetooth devices on this phone";
+    box.appendChild(h); box.appendChild(sub);
+    devs.forEach(d => {
+      const b = document.createElement("button"); b.type = "button";
+      b.style.cssText = "display:block;width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:10px;padding:12px;margin-bottom:8px;font-size:16px";
+      const n = document.createElement("b"); n.textContent = d.name || "(no name)";
+      const a = document.createElement("div"); a.className = "muted"; a.textContent = d.address;
+      b.appendChild(n); b.appendChild(a);
+      b.onclick = () => { wrap.remove(); resolve(d); };
+      box.appendChild(b);
+    });
+    const c = document.createElement("button"); c.type = "button";
+    c.style.cssText = "display:block;width:100%;border:0;background:#f2f4f7;border-radius:10px;padding:12px;font-size:16px;font-weight:700";
+    c.textContent = "Cancel"; c.onclick = () => { wrap.remove(); resolve(null); };
+    box.appendChild(c);
+    wrap.appendChild(box);
+    wrap.addEventListener("click", e => { if (e.target === wrap){ wrap.remove(); resolve(null); } });
+    document.body.appendChild(wrap);
+  });
+}
+async function nativePick(){
+  if (!(await nativeEnsurePermission())){ btMsg("Bluetooth permission was not allowed. Allow it in phone Settings → Apps → Label Printer → Permissions."); return false; }
+  let r; try { r = JSON.parse(AndroidPrinter.listPrinters()); } catch(e){ r = {ok:false, error:String(e)}; }
+  if (!r.ok){
+    btMsg({"bluetooth-off":"Bluetooth is off. Turn it on, then tap Connect printer again.",
+           "no-bluetooth":"This phone has no Bluetooth.",
+           "permission":"Bluetooth permission was not allowed. Allow it in phone Settings → Apps → Label Printer → Permissions."}[r.error] || ("Couldn't read paired printers: " + r.error));
+    return false;
+  }
+  const isZebra = d => /zebra|zr\d|zq\d|xx/i.test(d.name || "");
+  const devs = r.devices.slice().sort((a, b) => isZebra(b) - isZebra(a));
+  if (!devs.length){ btMsg("No paired printers. First pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer again."); return false; }
+  const pick = await showPrinterPicker(devs);
+  if (!pick) return false;
+  nativePrinter = pick;
+  try { localStorage.setItem("lbl_native_printer", JSON.stringify(pick)); } catch(e){}
+  btMsg("✅ Printer selected: " + printerName());
+  $("connectBtn").textContent = "🔁 Change printer";
+  updatePrinterStatus();
+  return true;
+}
+async function nativeSend(text){
+  if (!nativePrinter && !(await nativePick())) return false;
+  const r = await nativeCall(cb => AndroidPrinter.print(nativePrinter.address, text, cb));
+  if (!r.ok) throw new Error((r.msg || "no answer") + ". Check the printer is on, nearby and not connected to another phone.");
+  return true;
+}
+
 /* ---------------- Bluetooth (Web Bluetooth, Zebra BLE) ---------------- */
 const ZEBRA_SVC = "38eb4a80-c570-11e3-9507-0002a5d5c51b";
 const ZEBRA_WRITE = "38eb4a82-c570-11e3-9507-0002a5d5c51b";
 let btDevice = null, btChar = null;
 function btMsg(t){ $("btStatus").textContent = t; }
 async function btConnect(){
+  if (NATIVE) return nativePick();
   if (!navigator.bluetooth){ btMsg("This browser has no Bluetooth access. Use Chrome on Android, opened from an https:// link."); return false; }
   try {
     btMsg("Searching for printer…");
@@ -779,6 +855,7 @@ async function btConnect(){
   }
 }
 async function btSend(text){
+  if (NATIVE) return nativeSend(text);
   if (!btChar || !btDevice?.gatt?.connected){
     if (btDevice && btDevice.gatt){ try { const s = await btDevice.gatt.connect(); btChar = await (await s.getPrimaryService(ZEBRA_SVC)).getCharacteristic(ZEBRA_WRITE); } catch(e){ btChar = null; } }
     if (!btChar && !(await btConnect())) return false;
@@ -812,11 +889,12 @@ async function doPrint(){
     try {
       const ok = await btSend(zpl);
       if (ok){
-        btMsg(`✅ Sent ${copies} label${copies > 1 ? "s" : ""} to ${btDevice?.name || "printer"}`);
+        btMsg(`✅ Sent ${copies} label${copies > 1 ? "s" : ""} to ${printerName()}`);
+        showToast(`✅ Sent ${copies} label${copies > 1 ? "s" : ""} to ${printerName()}`);
         addHist(d, copies);
         if (inc){ $("lp").value = incrementCode(d.lp, copies); render(); }
       }
-    } catch(e){ btMsg("Print failed: " + (e.message || e)); }
+    } catch(e){ btMsg("Print failed: " + (e.message || e)); showToast("Print failed: " + (e.message || e)); }
     $("printBtn").disabled = false;
     return;
   }
@@ -1174,8 +1252,8 @@ document.querySelectorAll(".mi").forEach(b => b.addEventListener("click", () => 
 document.addEventListener("click", e => { const g = e.target.closest("[data-go]"); if (g) showTab(g.dataset.go); });
 function updatePrinterStatus(){
   const bt = $("method").value === "bt";
-  const on = bt && btDevice && btDevice.gatt && btDevice.gatt.connected;
-  const txt = !bt ? "Phone print (system print screen)" : on ? `Printer connected: ${btDevice.name || "Zebra"}` : "Printer not connected";
+  const on = bt && (NATIVE ? !!nativePrinter : !!(btDevice && btDevice.gatt && btDevice.gatt.connected));
+  const txt = !bt ? "Phone print (system print screen)" : on ? `Printer connected: ${printerName()}` : "Printer not connected";
   $("pstatText").textContent = txt;
   $("pstat").classList.toggle("ok", !!on || !bt);
   $("pdot").classList.toggle("ok", !!on || !bt); $("pdot2").classList.toggle("ok", !!on || !bt);
@@ -1232,7 +1310,7 @@ const ZH = {
   "Print history":"打印记录", "Clear":"清空", "Printed labels show here so you can reprint quickly.":"打印过的标签会显示在这里，方便快速重新打印。",
   "🖨 Print":"🖨 打印", "Point the camera at the barcode":"请将摄像头对准条码", "🔤 Read text":"🔤 识别文字",
   "📸 Take photo":"📸 拍照", "Cancel":"取消", "Type item code or name":"输入物料编码或名称",
-  "Scan with camera":"用摄像头扫描", "Open menu":"打开菜单", "Install app":"安装应用", "To install: tap Share, then Add to Home Screen.":"安装方法：点击“分享”，然后选择“添加到主屏幕”。", "App installed":"应用已安装", "A new version is available.":"有新版本可用。", "Update":"更新", "Switch language":"切换语言",
+  "Scan with camera":"用摄像头扫描", "Open menu":"打开菜单", "Choose your printer":"选择打印机", "Paired Bluetooth devices on this phone":"本手机已配对的蓝牙设备", "🔁 Change printer":"🔁 更换打印机", "Pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer.":"请先在手机“设置 → 蓝牙”中配对 ZR328，然后点击“连接打印机”。", "Bluetooth is off. Turn it on, then tap Connect printer again.":"蓝牙已关闭，请打开蓝牙后再次点击“连接打印机”。", "No paired printers. First pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer again.":"没有已配对的打印机。请先在手机“设置 → 蓝牙”中配对 ZR328，然后再次点击“连接打印机”。", "Bluetooth permission was not allowed. Allow it in phone Settings → Apps → Label Printer → Permissions.":"未允许蓝牙权限。请在手机“设置 → 应用 → Label Printer → 权限”中允许。", "This phone has no Bluetooth.":"此手机没有蓝牙。", "Install app":"安装应用", "To install: tap Share, then Add to Home Screen.":"安装方法：点击“分享”，然后选择“添加到主屏幕”。", "App installed":"应用已安装", "A new version is available.":"有新版本可用。", "Update":"更新", "Switch language":"切换语言",
   "e.g. 500":"例如 500", "e.g. B-2611-001":"例如 B-2611-001", "e.g. LP000123":"例如 LP000123", "e.g. CNC-IN":"例如 CNC-IN",
   "Use it":"使用", "No matching item in the list":"清单中没有匹配的物料",
   "⚠ Not in item list. Check the code.":"⚠ 不在物料清单中，请检查编码。",
@@ -1256,6 +1334,7 @@ const ZH = {
 };
 const ZH_FIELD = {"item code":"物料编码", "qty":"数量", "batch number":"批次号", "license plate":"托盘号", "location":"库位"};
 const ZH_RX = [
+  [/^✅ Printer selected: (.*)$/, m => `✅ 已选择打印机：${m[1]}`],
   [/^Version (.*)$/, m => `版本 ${m[1]}`],
   [/^([\d,]+) items loaded \((.*)\)\.?(.*)$/, m => `已加载 ${m[1]} 个物料（${m[2]}）。${m[3] ? " " + m[3] : ""}`],
   [/^([\d,]+) items\. Type to search\.$/, m => `共 ${m[1]} 个物料，输入关键字搜索。`],
@@ -1343,7 +1422,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.0.2";
+const APP_VERSION = "1.0.3";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
@@ -1413,6 +1492,14 @@ $("copyZpl").addEventListener("click", async () => {
 const savedMethod = store.get("lbl_method", null); if (savedMethod) $("method").value = savedMethod;
 const savedDpi = store.get("lbl_dpi", null); if (savedDpi) $("dpi").value = savedDpi;
 if (!navigator.bluetooth && !savedMethod) $("method").value = "sys";
+if (NATIVE){
+  // Inside the Android app: always print over Bluetooth; the phone print screen isn't available here.
+  $("method").value = "bt";
+  [...$("method").options].forEach(o => { if (o.value === "sys") o.remove(); });
+  $("btStatus").textContent = nativePrinter ? "✅ Printer selected: " + printerName() : "Pair the ZR328 in phone Settings → Bluetooth, then tap Connect printer.";
+  $("connectBtn").textContent = nativePrinter ? "🔁 Change printer" : "🔗 Connect printer";
+  document.querySelectorAll("#installBtn,#installHint").forEach(e => e.hidden = true);
+}
 showMethod();
 window.addEventListener("resize", render);
 
