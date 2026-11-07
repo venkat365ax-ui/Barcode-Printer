@@ -441,6 +441,7 @@
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
       <button type="button" class="small-btn" id="cRetry">🔄 Send waiting</button>
       <button type="button" class="small-btn" id="cExport">📤 Export Excel</button>
+      <button type="button" class="small-btn" id="cPhotos">🖼 Export photos</button>
       <button type="button" class="small-btn" id="cClearSent">Clear sent</button>
     </div>
     <ul class="hist" id="cList"></ul>
@@ -482,7 +483,7 @@
     <div id="cfgMap"></div>
     <div class="field" style="margin-top:10px">
       <label><span><input type="checkbox" id="cfgPhoto" checked> Ask for a photo after the label prints</span></label>
-      <div class="muted">Stick the label on the pallet, then take the photo. The photo is added to the same row.</div>
+      <div class="muted">Stick the label on the pallet, then take the photo. Photos stay on this phone: use Export photos on the Count page to send them, named by tag number.</div>
     </div>
     <div class="field">
       <label><span><input type="checkbox" id="cfgPrint" checked> Print the count label when I submit</span></label>
@@ -1555,8 +1556,7 @@ const MAP_KEYS = [
   ["counter", "Counter name", "",               "text",   /盘点人姓名|counter name|姓名/i],
   ["time",    "Count time",   "",               "date",   /盘点时间|提交时间|count time|submitted/i],
   ["status",  "Status",       "",               "select", /状态|status/i],
-  ["notes",   "Notes",        "备注 Notes",     "text",   /备注|note/i],
-  ["photo",   "Photo",        "照片 Photo",     "image",  /照片|photo|图片/i]
+  ["notes",   "Notes",        "备注 Notes",     "text",   /备注|note/i]
 ];
 const TYPES = ["text","number","select","date","image"];
 function defaultCfg(){ const map = {}; MAP_KEYS.forEach(([k,,def,type]) => map[k] = {field: def, type}); return {url: "", map, photo: true, print: true}; }
@@ -1636,7 +1636,6 @@ function matchSample(){
   MAP_KEYS.forEach(([k,,, , rx]) => {
     const id = ids.find(i => !used.has(i) && rx.test(SAMPLE_TITLES[i]));
     if (id){ used.add(id); CFG.map[k] = {field: id, type: types[id] || CFG.map[k].type}; n++; }
-    else if (k === "photo") CFG.map[k] = {field: (CFG.map.photo && CFG.map.photo.field) || "照片 Photo", type: "image"};   // WeCom leaves image columns out of the sample; send by column title
     else CFG.map[k] = {field: "", type: CFG.map[k].type};
   });
   store.set("st_cfg", CFG);
@@ -1688,12 +1687,6 @@ async function sendOne(rec){
     rec.recordId = j.add_records && j.add_records[0] && j.add_records[0].record_id || "";
     rec.err = ""; await CDB.put(rec);
   }
-  if (rec.photo && !rec.photoSent && CFG.map.photo && CFG.map.photo.field){
-    if (!rec.recordId) throw new Error("WeCom did not return the row ID, so the photo can't be added");
-    const j = await httpPostJson(CFG.url, {update_records: [{record_id: rec.recordId, values: recordValues(rec, true)}]});
-    if (!j || j.errcode !== 0) throw new Error("Photo: " + wecomErr(j || {}));
-    rec.photoSent = true; rec.photo = null; rec.hadPhoto = true; rec.err = ""; await CDB.put(rec);
-  }
 }
 async function sendWaiting(manual){
   if (sending) return;
@@ -1701,7 +1694,7 @@ async function sendWaiting(manual){
   sending = true;
   let ok = 0, bad = 0, lastErr = "";
   try {
-    const list = (await CDB.all()).filter(r => !r.sent || (r.photo && !r.photoSent)).reverse();
+    const list = (await CDB.all()).filter(r => !r.sent).reverse();
     for (const r of list){
       try { await sendOne(r); ok++; }
       catch(e){ bad++; lastErr = e.message || String(e); r.err = lastErr; await CDB.put(r); if (/No internet|blocked/.test(lastErr)) break; }
@@ -1880,10 +1873,9 @@ $("c_photoInput").addEventListener("change", async e => {
   if (!f || !tag) return;
   try {
     const rec = (await CDB.all()).find(r => r.tag === tag); if (!rec) return;
-    rec.photo = await shrinkPhoto(f); rec.photoSent = false; rec.hadPhoto = true;
+    rec.photo = await shrinkPhoto(f); rec.photoExported = false; rec.hadPhoto = true;
     await CDB.put(rec); await renderCounts();
     showToast(`📷 Photo added to ${tag}`);
-    sendWaiting(false).then(renderCounts);
   } catch(err){ showToast(err.message || String(err)); }
   $("c_item").focus();
 });
@@ -1897,15 +1889,18 @@ async function reprintCount(tag){
 }
 async function renderCounts(){
   const all = await CDB.all();
-  const waiting = all.filter(r => !r.sent || (r.photo && !r.photoSent)).length;
+  const waiting = all.filter(r => !r.sent).length;
+  const photos = all.filter(r => r.photo).length, newPhotos = all.filter(r => r.photo && !r.photoExported).length;
+  $("cPhotos").disabled = !photos;
+  $("cPhotos").textContent = newPhotos ? `🖼 Export photos (${newPhotos} new)` : "🖼 Export photos";
   $("cSummary").textContent = all.length ? `${all.length} counts · ${waiting} waiting` : "";
   $("cEmpty").style.display = all.length ? "none" : "block";
   $("cRetry").disabled = !waiting;
-  const st = r => r.sent ? (r.photo && !r.photoSent ? "⏳ photo waiting" : "✅ sent") : cfgOk() ? "⏳ waiting" : "💾 on phone";
+  const st = r => r.sent ? "✅ sent" : cfgOk() ? "⏳ waiting" : "💾 on phone";
   $("cList").innerHTML = all.slice(0, 200).map(r => `<li><span><b>${esc(r.tag)}</b> · ${esc(r.item)} · <b>${esc(r.qty)}</b> ${esc(r.unit || "")}<br>
     <span class="muted">${esc(r.loc)}${r.lp ? " · LP " + esc(r.lp) : ""}${r.batch ? " · " + esc(r.batch) : ""} · ${esc(fmtTime(r.time).slice(5))}</span><br>
-    <span class="cst"><span>${st(r)}</span> ${r.printed ? "· 🖨" : `<span>· not printed</span>`}${r.photoSent || r.photo ? " · 📷" : ""}</span>${r.err ? `<br><span class="cerr">${esc(r.err)}</span>` : ""}</span>
-    <span class="cbtns"><button type="button" data-rp="${esc(r.tag)}">Reprint</button>${!r.photoSent ? `<button type="button" data-ph="${esc(r.tag)}">📷</button>` : ""}</span></li>`).join("");
+    <span class="cst"><span>${st(r)}</span> ${r.printed ? "· 🖨" : `<span>· not printed</span>`}${r.photo ? " · 📷" + (r.photoExported ? " ✓" : "") : ""}</span>${r.err ? `<br><span class="cerr">${esc(r.err)}</span>` : ""}</span>
+    <span class="cbtns"><button type="button" data-rp="${esc(r.tag)}">Reprint</button><button type="button" data-ph="${esc(r.tag)}">📷</button></span></li>`).join("");
 }
 $("cList").addEventListener("click", e => {
   const a = e.target.closest("button[data-rp]"); if (a) return reprintCount(a.dataset.rp);
@@ -1913,9 +1908,11 @@ $("cList").addEventListener("click", e => {
 });
 $("cRetry").addEventListener("click", () => sendWaiting(true));
 $("cClearSent").addEventListener("click", async () => {
-  const done = (await CDB.all()).filter(r => r.sent && !(r.photo && !r.photoSent));
+  const all = await CDB.all();
+  const done = all.filter(r => r.sent && (!r.photo || r.photoExported));
   for (const r of done) await CDB.del(r.tag);
-  renderCounts(); showToast(`Removed ${done.length} sent counts from this phone.`);
+  const kept = all.filter(r => r.sent && r.photo && !r.photoExported).length;
+  renderCounts(); showToast(`Removed ${done.length} sent counts from this phone.` + (kept ? ` Kept ${kept} with photos not exported yet.` : ""));
 });
 
 /* ---- export ---- */
@@ -1933,8 +1930,8 @@ async function saveFileOut(name, bytes, mime){
 async function exportCounts(){
   const all = (await CDB.all()).slice().reverse();
   if (!all.length){ showToast("No counts to export."); return; }
-  const head = ["Tag no.","Count time","Team","Counter","Location","Item","Product name","Qty","Unit","LP","Batch","Notes","Sent to WeCom","Photo"];
-  const rows = all.map(r => [r.tag, fmtTime(r.time), r.team, r.counter, r.loc, r.item, r.name || "", Number(r.qty), r.unit || "", r.lp || "", r.batch || "", r.notes || "", r.sent ? "Yes" : "No", r.photoSent ? "Sent" : r.photo ? "Waiting" : "No"]);
+  const head = ["Tag no.","Count time","Team","Counter","Location","Item","Product name","Qty","Unit","LP","Batch","Notes","Sent to WeCom","Photo file"];
+  const rows = all.map(r => [r.tag, fmtTime(r.time), r.team, r.counter, r.loc, r.item, r.name || "", Number(r.qty), r.unit || "", r.lp || "", r.batch || "", r.notes || "", r.sent ? "Yes" : "No", r.photo ? r.tag + ".jpg" : ""]);
   const stamp = fmtTime(Date.now()).replace(/[-: ]/g, "").slice(0, 12);
   const team = $("c_team").value || "team";
   try {
@@ -1952,6 +1949,50 @@ async function exportCounts(){
   }
 }
 $("cExport").addEventListener("click", exportCounts);
+
+/* ---- photo export: one ZIP, each photo named by its tag (no compression; JPEGs are already compressed) ---- */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++){ let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b){ let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(files){
+  const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+  const d = new Date(), dt = ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)), dd = (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate());
+  for (const f of files){
+    const nm = enc.encode(f.name), crc = crc32(f.data), sz = f.data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dt, true); lh.setUint16(12, dd, true); lh.setUint32(14, crc, true); lh.setUint32(18, sz, true); lh.setUint32(22, sz, true);
+    lh.setUint16(26, nm.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), nm, f.data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, dt, true); ch.setUint16(14, dd, true); ch.setUint32(16, crc, true); ch.setUint32(20, sz, true); ch.setUint32(24, sz, true);
+    ch.setUint16(28, nm.length, true); ch.setUint32(42, off, true);
+    central.push(new Uint8Array(ch.buffer), nm);
+    off += 30 + nm.length + sz;
+  }
+  const cdSize = central.reduce((a, b) => a + b.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, off, true);
+  const all = [...parts, ...central, new Uint8Array(end.buffer)];
+  const out = new Uint8Array(all.reduce((a, b) => a + b.length, 0)); let p = 0; for (const a of all){ out.set(a, p); p += a.length; }
+  return out;
+}
+function dataUrlBytes(u){ const b = atob(String(u).split(",")[1] || ""); const a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
+async function exportPhotos(){
+  const all = (await CDB.all()).filter(r => r.photo).reverse();
+  if (!all.length){ showToast("No photos to export."); return; }
+  const files = all.map(r => ({name: r.tag + ".jpg", data: dataUrlBytes(r.photo)}));
+  const stamp = fmtTime(Date.now()).replace(/[-: ]/g, "").slice(0, 12), team = $("c_team").value || "team";
+  const name = `Photos_${team}_${stamp}.zip`;
+  try {
+    const where = await saveFileOut(name, makeZip(files), "application/zip");
+    for (const r of all){ r.photoExported = true; await CDB.put(r); }
+    renderCounts();
+    showToast(`🖼 Saved ${files.length} photos as ${name} in ${where}`);
+  } catch(e){ showToast("Export failed: " + (e.message || e)); }
+}
+$("cPhotos").addEventListener("click", exportPhotos);
 
 /* ---- wire up ---- */
 $("countBtn").addEventListener("click", submitCount);
@@ -2035,11 +2076,13 @@ setInterval(() => {
   if (dr.loc) $("c_loc").value = dr.loc;
   if (dr.unit) $("c_unit").value = dr.unit;
   renderCfg(); renderCounts();
+  CDB.all().then(async list => { for (const r of list) if (r.sent && r.err){ r.err = ""; await CDB.put(r); } renderCounts(); });
   setTimeout(() => sendWaiting(false), 3000);
 })();
 
 /* ---------------- Language (English / 中文) ---------------- */
 const ZH = {
+  "🖼 Export photos":"🖼 导出照片", "No photos to export.":"没有可导出的照片。",
   "📷 Take photo":"📷 拍照", "Skip photo":"跳过拍照", "🖨 Reprint":"🖨 重新打印", "Label not printed.":"标签未打印。",
   "Stick the label on the pallet":"把标签贴到托盘上", "Take a photo of the label with the pallet":"拍一张标签和托盘的照片",
   "Count settings":"盘点设置", "WeCom connection and count options (admin only)":"企业微信连接和盘点选项（仅管理员）",
@@ -2066,7 +2109,7 @@ const ZH = {
   "🔗 Match columns":"🔗 匹配列",
   "Column for each value. The name must match the Smart Sheet column title exactly. Leave empty to not send that value.":"每个数据对应的列。名称必须与智能表格的列标题完全一致。留空则不发送该数据。",
   "Ask for a photo after the label prints":"标签打印后提示拍照",
-  "Stick the label on the pallet, then take the photo. The photo is added to the same row.":"先把标签贴到托盘上，再拍照。照片会加到同一行。",
+  "Stick the label on the pallet, then take the photo. Photos stay on this phone: use Export photos on the Count page to send them, named by tag number.":"先把标签贴到托盘上，再拍照。照片保存在本手机：在盘点页面点击“导出照片”发送，文件名为标签号。",
   "Print the count label when I submit":"提交时打印盘点标签",
   "💾 Save":"💾 保存", "🧪 Send a test row":"🧪 发送测试行",
   "✅ Submit & print":"✅ 提交并打印", "✅ Submit":"✅ 提交",
@@ -2138,6 +2181,9 @@ const ZH = {
 };
 const ZH_FIELD = {"item code":"物料编码", "qty":"数量", "batch number":"批次号", "license plate":"托盘号", "location":"库位"};
 const ZH_RX = [
+  [/^🖼 Export photos \((\d+) new\)$/, m => `🖼 导出照片（${m[1]} 张新）`],
+  [/^🖼 Saved (\d+) photos as (.*) in (.*)$/, m => `🖼 已保存 ${m[1]} 张照片：${m[2]}，位置 ${m[3]}`],
+  [/^Removed (\d+) sent counts from this phone\. Kept (\d+) with photos not exported yet\.$/, m => `已从本手机清除 ${m[1]} 条已发送记录。保留 ${m[2]} 条照片未导出的记录。`],
   [/^(.*): no photo\. You can add it later from the list\.$/, m => `${m[1]}：未拍照。可以稍后在列表中补拍。`],
   [/^(.*) · nearby \(Bluetooth LE\)$/, m => `${m[1]} · 附近（低功耗蓝牙）`],
   [/^(.*) · paired$/, m => `${m[1]} · 已配对`],
@@ -2243,7 +2289,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.2.1";
+const APP_VERSION = "1.2.2";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
