@@ -1544,7 +1544,8 @@ const MAP_KEYS = [
   ["lp",      "License plate","LP 托盘号",      "text",   /托盘|\blp\b|license/i],
   ["batch",   "Batch",        "批次 Batch",     "text",   /批次|batch/i],
   ["counter", "Counter name", "",               "text",   /盘点人姓名|counter name|姓名/i],
-  ["time",    "Count time",   "",               "date",   /盘点时间|count time/i],
+  ["time",    "Count time",   "",               "date",   /盘点时间|提交时间|count time|submitted/i],
+  ["status",  "Status",       "",               "select", /状态|status/i],
   ["notes",   "Notes",        "备注 Notes",     "text",   /备注|note/i],
   ["photo",   "Photo",        "照片 Photo",     "image",  /照片|photo|图片/i]
 ];
@@ -1614,7 +1615,10 @@ function matchSample(){
   SAMPLE_TITLES = {};
   ids.forEach(id => {
     const v = schema[id];
-    if (v && typeof v === "object"){ SAMPLE_TITLES[id] = v.title || id; if (v.type) types[id] = schemaType(v.type); }
+    if (v && typeof v === "object"){
+      SAMPLE_TITLES[id] = v.title || id; if (v.type) types[id] = schemaType(v.type);
+      if (/状态|status/i.test(v.title || "") && Array.isArray(v.enum) && v.enum.length) CFG.statusDefault = v.enum[0];
+    }
     else SAMPLE_TITLES[id] = v || id;
     if (!types[id] && id in vals) types[id] = guessType(vals[id]);
   });
@@ -1623,6 +1627,7 @@ function matchSample(){
   MAP_KEYS.forEach(([k,,, , rx]) => {
     const id = ids.find(i => !used.has(i) && rx.test(SAMPLE_TITLES[i]));
     if (id){ used.add(id); CFG.map[k] = {field: id, type: types[id] || CFG.map[k].type}; n++; }
+    else if (k === "photo") CFG.map[k] = {field: (CFG.map.photo && CFG.map.photo.field) || "照片 Photo", type: "image"};   // WeCom leaves image columns out of the sample; send by column title
     else CFG.map[k] = {field: "", type: CFG.map[k].type};
   });
   store.set("st_cfg", CFG);
@@ -1651,7 +1656,7 @@ function cellValue(type, v, rec){
   return String(v);
 }
 function recordValues(rec, onlyPhoto){
-  const src = {tag: rec.tag, team: rec.team, loc: rec.loc, item: rec.item, qty: rec.qty, unit: rec.unit, lp: rec.lp, batch: rec.batch, counter: rec.counter, time: rec.time, notes: rec.notes, photo: rec.photo};
+  const src = {status: CFG.statusDefault || "待核对 Pending", tag: rec.tag, team: rec.team, loc: rec.loc, item: rec.item, qty: rec.qty, unit: rec.unit, lp: rec.lp, batch: rec.batch, counter: rec.counter, time: rec.time, notes: rec.notes, photo: rec.photo};
   const out = {};
   for (const [k] of MAP_KEYS){
     if (onlyPhoto && k !== "photo") continue;
@@ -2044,7 +2049,7 @@ const ZH = {
   "No columns found in the sample data.":"示例数据中没有找到列。",
   "✅ sent":"✅ 已发送", "⏳ waiting":"⏳ 待发送", "⏳ photo waiting":"⏳ 照片待发送", "💾 on phone":"💾 保存在手机",
   "Text":"文本", "(not sent)":"（不发送）",
-  "Tag no.":"标签号", "License plate":"托盘号 (LP)", "Batch":"批次", "Count time":"盘点时间", "Photo":"照片", "Item":"物料",
+  "Tag no.":"标签号", "Status":"状态", "License plate":"托盘号 (LP)", "Batch":"批次", "Count time":"盘点时间", "Photo":"照片", "Item":"物料",
   "Label":"标签", "Printer setup":"打印机设置", "Item list":"物料清单", "History":"打印记录", "Language":"语言",
   "Label Printer":"标签打印", "Fill in the fields, check the preview, then tap Print":"填写信息，检查预览，然后点击打印",
   "Connect the Zebra and choose the label size":"连接斑马打印机并选择标签尺寸",
@@ -2205,7 +2210,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.1.2";
+const APP_VERSION = "1.1.4";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;

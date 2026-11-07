@@ -246,9 +246,11 @@ public class MainActivity extends Activity {
     private BluetoothGattCharacteristic bleChar;
     private volatile boolean bleConnected;
     private volatile int bleMtu = 23;
+    private volatile int bleLastStatus = 0;
 
     private final BluetoothGattCallback bleCb = new BluetoothGattCallback() {
         @Override public void onConnectionStateChange(BluetoothGatt g, int status, int newState) {
+            bleLastStatus = status;
             bleConnected = status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED;
             if (!bleConnected) bleChar = null;
             bleSig.release();
@@ -276,11 +278,31 @@ public class MainActivity extends Activity {
         BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
         if (adapter == null) throw new IOException("This phone has no Bluetooth");
         if (!adapter.isEnabled()) throw new IOException("Bluetooth is off");
-        BluetoothDevice device = adapter.getRemoteDevice(address);
-        bleSig.drainPermits();
-        bleGatt = device.connectGatt(this, false, bleCb, BluetoothDevice.TRANSPORT_LE);
-        bleAddr = address;
-        if (!bleWait(15000) || !bleConnected) { bleClose(); throw new IOException("Couldn't connect to the printer"); }
+        final BluetoothDevice device = adapter.getRemoteDevice(address);
+        try { adapter.cancelDiscovery(); } catch (SecurityException ignored) { }
+        String why = "";
+        for (int attempt = 1; attempt <= 3 && !bleConnected; attempt++) {
+            bleSig.drainPermits();
+            bleLastStatus = 0;
+            final BluetoothGatt[] holder = new BluetoothGatt[1];
+            final Semaphore made = new Semaphore(0);
+            ui.post(() -> {   // some phones only connect reliably when started from the main thread
+                try { holder[0] = device.connectGatt(MainActivity.this, false, bleCb, BluetoothDevice.TRANSPORT_LE); }
+                catch (SecurityException e) { holder[0] = null; }
+                made.release();
+            });
+            made.tryAcquire(3000, TimeUnit.MILLISECONDS);
+            bleGatt = holder[0];
+            bleAddr = address;
+            if (bleGatt == null) { why = "connect not started"; break; }
+            boolean answered = bleWait(12000);
+            if (bleConnected) break;
+            why = answered ? "status " + bleLastStatus : "no answer";
+            try { bleGatt.disconnect(); bleGatt.close(); } catch (Exception ignored) { }
+            bleGatt = null;
+            Thread.sleep(700);
+        }
+        if (!bleConnected) { bleClose(); throw new IOException("Couldn't connect over Bluetooth LE (" + why + ")"); }
         bleSig.drainPermits();
         if (bleGatt.requestMtu(512)) bleWait(5000);
         bleSig.drainPermits();
@@ -405,6 +427,32 @@ public class MainActivity extends Activity {
             }).start();
         }
 
+        /** Classic Bluetooth (SPP) send; also used as fallback when Bluetooth LE fails. */
+        private void classicSend(String address, byte[] bytes) throws Exception {
+            BluetoothSocket socket = null;
+            try {
+                BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+                if (adapter == null) throw new IOException("This phone has no Bluetooth");
+                if (!adapter.isEnabled()) throw new IOException("Bluetooth is off");
+                try { adapter.cancelDiscovery(); } catch (SecurityException ignored) { }
+                BluetoothDevice device = adapter.getRemoteDevice(address);
+                socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
+                try {
+                    socket.connect();
+                } catch (IOException first) {
+                    try { socket.close(); } catch (IOException ignored) { }
+                    socket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
+                    socket.connect();
+                }
+                OutputStream os = socket.getOutputStream();
+                for (int off = 0; off < bytes.length; off += 4096) os.write(bytes, off, Math.min(4096, bytes.length - off));
+                os.flush();
+                Thread.sleep(Math.min(6000, 800 + bytes.length / 15));
+            } finally {
+                if (socket != null) try { socket.close(); } catch (IOException ignored) { }
+            }
+        }
+
         /** Send ZPL to a Zebra printer over Bluetooth LE (no pairing needed). */
         @JavascriptInterface
         public void printBle(final String address, final String data, final String callback) {
@@ -413,14 +461,23 @@ public class MainActivity extends Activity {
                     try {
                         byte[] bytes = data.getBytes(StandardCharsets.UTF_8);
                         try {
-                            bleConnect(address);
-                            bleWrite(bytes);
-                        } catch (IOException first) {
-                            bleClose();             // one retry with a fresh connection
-                            bleConnect(address);
-                            bleWrite(bytes);
+                            try {
+                                bleConnect(address);
+                                bleWrite(bytes);
+                            } catch (IOException first) {
+                                bleClose();             // one more try with a fresh connection
+                                bleConnect(address);
+                                bleWrite(bytes);
+                            }
+                            Thread.sleep(300);
+                        } catch (IOException bleErr) {
+                            bleClose();
+                            try {
+                                classicSend(address, bytes);   // same printer over classic Bluetooth (may ask to pair once)
+                            } catch (Exception classicErr) {
+                                throw new IOException(bleErr.getMessage() + "; classic Bluetooth: " + classicErr.getMessage());
+                            }
                         }
-                        Thread.sleep(300);
                         callJs(callback, true, "");
                     } catch (SecurityException e) {
                         bleClose();
