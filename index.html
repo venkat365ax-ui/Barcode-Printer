@@ -155,6 +155,7 @@
   <nav class="dnav">
     <button type="button" class="mi on" data-tab="label"><span class="ic">🏷️</span><span>Label</span></button>
     <button type="button" class="mi" data-tab="count"><span class="ic">📋</span><span>Count</span></button>
+    <button type="button" class="mi" data-tab="countcfg"><span class="ic">⚙️</span><span>Count settings</span><span class="ic" style="font-size:14px">🔒</span></button>
     <button type="button" class="mi" data-tab="printer"><span class="ic">🖨️</span><span>Printer setup</span><i class="pdot" id="pdot2"></i></button>
     <button type="button" class="mi" data-tab="items"><span class="ic">📦</span><span>Item list</span></button>
     <button type="button" class="mi" data-tab="history"><span class="ic">🕘</span><span>History</span></button>
@@ -437,6 +438,25 @@
     <p class="muted" id="cEmpty">Submitted counts show here with their tag number and sending status.</p>
   </div>
 
+  <input type="file" id="c_photoInput" accept="image/*" capture="environment" style="display:none">
+  </section>
+
+  <section class="tab" id="tab-countcfg" hidden>
+  <div class="card" id="lockCard">
+    <h2>Admin PIN</h2>
+    <div class="muted" id="lockHint" style="margin-bottom:10px">These settings are for the person who sets up the phones. Enter the admin PIN to open them.</div>
+    <div class="field">
+      <label for="lockPin" id="lockLabel">Admin PIN</label>
+      <input type="password" id="lockPin" inputmode="numeric" autocomplete="off" placeholder="4–8 digits">
+    </div>
+    <div class="field" id="lockPin2Wrap" hidden>
+      <label for="lockPin2">Enter the PIN again</label>
+      <input type="password" id="lockPin2" inputmode="numeric" autocomplete="off">
+    </div>
+    <button type="button" class="small-btn" id="lockBtn" style="padding:12px 16px;font-size:15px">🔓 Open settings</button>
+    <div class="err" id="lockErr"></div>
+  </div>
+  <div id="cfgWrap" hidden>
   <div class="card" id="cfgCard">
     <h2>WeCom Smart Sheet connection</h2>
     <div class="muted" style="margin-bottom:10px">Each submitted count is added as a new row in your Smart Sheet. In the Smart Sheet, open the sheet menu → 接收外部数据 (Receive external data), turn it on, then copy the Webhook address and the sample data (示例数据) here.</div>
@@ -464,7 +484,14 @@
     </div>
     <div class="muted" id="cfgMsg" style="margin-top:8px"></div>
   </div>
-  <input type="file" id="c_photoInput" accept="image/*" capture="environment" style="display:none">
+  <div class="card">
+    <h2>Admin PIN</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="small-btn" id="pinChange">🔑 Change PIN</button>
+      <button type="button" class="small-btn" id="lockNow">🔒 Lock settings</button>
+    </div>
+  </div>
+  </div>
   </section>
 
   <section class="tab" id="tab-history" hidden>
@@ -1361,7 +1388,7 @@ function BUILTIN_ITEMS(){ try { return JSON.parse(document.getElementById("itemD
 })();
 
 /* ---------------- Tabs ---------------- */
-const TABS = ["label","count","printer","items","history"];
+const TABS = ["label","count","countcfg","printer","items","history"];
 function showTab(t){
   if (!TABS.includes(t)) t = "label";
   TABS.forEach(n => { $("tab-" + n).hidden = n !== t; });
@@ -1377,6 +1404,8 @@ function showTab(t){
   store.set("lbl_tab", t);
   if (t === "label") render();
   if (t === "count"){ countRender(); renderCounts(); }
+  if (t === "countcfg") lockRender();
+  else if (unlocked){ unlocked = false; }
   if (t === "items") renderBrowse();
   window.scrollTo(0, 0);
 }
@@ -1385,7 +1414,8 @@ const PAGE = {
   printer: ["Printer setup", "Connect the Zebra and choose the label size"],
   items:   ["Item list", "Search items and update the D365 list"],
   history: ["History", "Labels printed on this phone"],
-  count:   ["Count", "Count stock, print the count label and send it to WeCom"]
+  count:   ["Count", "Count stock, print the count label and send it to WeCom"],
+  countcfg:["Count settings", "WeCom connection and count options (admin only)"]
 };
 function openMenu(){ $("drawer").classList.add("open"); $("scrim").classList.add("open"); $("drawer").setAttribute("aria-hidden", "false"); }
 function closeMenu(){ $("drawer").classList.remove("open"); $("scrim").classList.remove("open"); $("drawer").setAttribute("aria-hidden", "true"); }
@@ -1552,7 +1582,7 @@ function updateSheetStatus(){
   const ok = cfgOk();
   $("sstatText").textContent = ok ? "Sending counts to WeCom Smart Sheet" : "WeCom Smart Sheet not connected. Counts are kept on this phone.";
   $("sstat").classList.toggle("ok", ok);
-  $("sstatBtn").textContent = ok ? "Change" : "Set up";
+  $("sstatBtn").textContent = "Set up"; $("sstatBtn").hidden = ok;
 }
 function guessType(v){
   if (typeof v === "number") return "number";
@@ -1910,7 +1940,40 @@ $("csugg").addEventListener("click", e => { const o = e.target.closest(".opt"); 
 $("cItemInfo").addEventListener("click", e => { if (e.target.id === "cFixItem"){ const m = findExact($("c_item").value); if (m){ $("c_item").value = m[0]; updateCItemInfo(); countRender(); } } });
 $("c_loc").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); $("c_item").focus(); } });
 $("c_qty").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); submitCount(); } });
-$("sstatBtn").addEventListener("click", () => $("cfgCard").scrollIntoView({behavior: "smooth", block: "start"}));
+$("sstatBtn").addEventListener("click", () => showTab("countcfg"));
+/* ---- admin PIN for Count settings ---- */
+let unlocked = false, pinMode = "open";   // open | set | change
+async function pinHash(pin){
+  try { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("lp-pin:" + pin)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join(""); }
+  catch(e){ let h = 0; for (const ch of "lp-pin:" + pin) h = (h*31 + ch.charCodeAt(0)) | 0; return "s" + h; }
+}
+function lockRender(){
+  const has = !!store.get("st_pin", "");
+  if (!has && pinMode === "open") pinMode = "set";
+  $("cfgWrap").hidden = !unlocked; $("lockCard").hidden = unlocked;
+  if (unlocked) return;
+  $("lockPin").value = ""; $("lockPin2").value = ""; $("lockErr").textContent = "";
+  const setting = pinMode !== "open";
+  $("lockPin2Wrap").hidden = !setting;
+  $("lockLabel").textContent = setting ? "New admin PIN" : "Admin PIN";
+  $("lockHint").textContent = setting ? "Choose an admin PIN. Only people who know it can change the WeCom connection and count options on this phone." : "These settings are for the person who sets up the phones. Enter the admin PIN to open them.";
+  $("lockBtn").textContent = setting ? "💾 Save PIN" : "🔓 Open settings";
+  setTimeout(() => $("lockPin").focus(), 200);
+}
+$("lockBtn").addEventListener("click", async () => {
+  const p1 = $("lockPin").value.trim(), p2 = $("lockPin2").value.trim();
+  if (pinMode !== "open"){
+    if (!/^\d{4,8}$/.test(p1)){ $("lockErr").textContent = "Use 4 to 8 digits."; return; }
+    if (p1 !== p2){ $("lockErr").textContent = "The two PINs are different."; return; }
+    store.set("st_pin", await pinHash(p1)); pinMode = "open"; unlocked = true;
+    showToast("🔑 Admin PIN saved."); lockRender(); renderCfg(); return;
+  }
+  if (await pinHash(p1) === store.get("st_pin", "")){ unlocked = true; lockRender(); renderCfg(); }
+  else { $("lockErr").textContent = "Wrong PIN."; $("lockPin").value = ""; }
+});
+["lockPin","lockPin2"].forEach(id => $(id).addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); $("lockBtn").click(); } }));
+$("lockNow").addEventListener("click", () => { unlocked = false; lockRender(); });
+$("pinChange").addEventListener("click", () => { unlocked = false; pinMode = "change"; lockRender(); });
 $("cfgSave").addEventListener("click", () => { readCfg(); updateSheetStatus(); renderCounts(); $("cfgMsg").textContent = cfgOk() ? "✅ Saved." : CFG.url ? "⚠ Saved, but the Webhook address doesn't look right. It should start with https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=" : "Saved. No Webhook address, so counts stay on this phone."; });
 $("cfgMatch").addEventListener("click", matchSample);
 $("cfgTest").addEventListener("click", async () => {
@@ -1942,6 +2005,12 @@ setInterval(() => {
 
 /* ---------------- Language (English / 中文) ---------------- */
 const ZH = {
+  "Count settings":"盘点设置", "WeCom connection and count options (admin only)":"企业微信连接和盘点选项（仅管理员）",
+  "Admin PIN":"管理员密码", "New admin PIN":"新的管理员密码", "Enter the PIN again":"再次输入密码", "4–8 digits":"4–8 位数字",
+  "🔓 Open settings":"🔓 打开设置", "💾 Save PIN":"💾 保存密码", "🔑 Change PIN":"🔑 修改密码", "🔒 Lock settings":"🔒 锁定设置",
+  "These settings are for the person who sets up the phones. Enter the admin PIN to open them.":"这些设置供负责配置手机的人使用。请输入管理员密码打开。",
+  "Choose an admin PIN. Only people who know it can change the WeCom connection and count options on this phone.":"请设置管理员密码。只有知道密码的人才能修改本手机的企业微信连接和盘点选项。",
+  "Use 4 to 8 digits.":"请使用 4 到 8 位数字。", "The two PINs are different.":"两次输入的密码不一致。", "Wrong PIN.":"密码错误。", "🔑 Admin PIN saved.":"🔑 管理员密码已保存。",
   "Paired and nearby Bluetooth devices":"已配对和附近的蓝牙设备", "Searching for nearby printers… (about 6 seconds)":"正在搜索附近的打印机…（约 6 秒）",
   "No printer selected.":"未选择打印机。", "No printer found. Turn the ZR328 on, keep it close, and tap Connect printer again.":"未找到打印机。请打开 ZR328，靠近手机，然后重新点击“连接打印机”。",
   "Count":"盘点", "Count stock, print the count label and send it to WeCom":"盘点库存，打印盘点标签并发送到企业微信",
@@ -2136,7 +2205,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.1.1";
+const APP_VERSION = "1.1.2";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
