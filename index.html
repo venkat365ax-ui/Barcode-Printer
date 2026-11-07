@@ -1552,6 +1552,14 @@ function guessType(v){
   }
   return "text";
 }
+function schemaType(t){
+  t = String(t || "").toLowerCase();
+  if (t === "number" || t === "currency" || t === "percentage") return "number";
+  if (t.includes("select")) return "select";
+  if (t.includes("image") || t.includes("picture")) return "image";
+  if (t.includes("date") || t.includes("time")) return "date";
+  return "text";                                   // text, barcode, phone, email…
+}
 function matchSample(){
   readCfg();
   let j;
@@ -1560,12 +1568,19 @@ function matchSample(){
   const vals = (j.add_records && j.add_records[0] && j.add_records[0].values) || {};
   const ids = Object.keys(schema).length ? Object.keys(schema) : Object.keys(vals);
   if (!ids.length){ $("cfgMatchMsg").textContent = "No columns found in the sample data."; return; }
-  SAMPLE_TITLES = {}; ids.forEach(id => SAMPLE_TITLES[id] = schema[id] || id);
+  const types = {};
+  SAMPLE_TITLES = {};
+  ids.forEach(id => {
+    const v = schema[id];
+    if (v && typeof v === "object"){ SAMPLE_TITLES[id] = v.title || id; if (v.type) types[id] = schemaType(v.type); }
+    else SAMPLE_TITLES[id] = v || id;
+    if (!types[id] && id in vals) types[id] = guessType(vals[id]);
+  });
   store.set("st_titles", SAMPLE_TITLES);
   let n = 0; const used = new Set();
   MAP_KEYS.forEach(([k,,, , rx]) => {
     const id = ids.find(i => !used.has(i) && rx.test(SAMPLE_TITLES[i]));
-    if (id){ used.add(id); CFG.map[k] = {field: id, type: id in vals ? guessType(vals[id]) : CFG.map[k].type}; n++; }
+    if (id){ used.add(id); CFG.map[k] = {field: id, type: types[id] || CFG.map[k].type}; n++; }
     else CFG.map[k] = {field: "", type: CFG.map[k].type};
   });
   store.set("st_cfg", CFG);
