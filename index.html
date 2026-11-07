@@ -118,6 +118,19 @@
   .toast button{background:#fff;color:#101828;border:0;border-radius:8px;padding:6px 10px;font-weight:700}
   .req{color:#d92d20}
   #printArea{display:none}
+  .sstat{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:14px;font-size:13px}
+  .sstat .dot{width:9px;height:9px;border-radius:50%;background:#f79009;flex:0 0 auto}
+  .sstat.ok .dot{background:#12b76a}
+  .sstat span:nth-child(2){flex:1}
+  .bigqty{font-size:24px!important;font-weight:700}
+  .warnbox{background:#fffaeb;border:1px solid #fedf89;color:#93370d;border-radius:9px;padding:10px 12px;font-size:14px}
+  .cst{font-size:12px;color:#344054}
+  .cerr{font-size:12px;color:#d92d20}
+  .cbtns{display:flex;flex-direction:column;gap:6px}
+  .maprow{display:grid;grid-template-columns:96px 1fr 84px;gap:6px;align-items:center;margin-bottom:6px}
+  .maprow .mk{font-size:13px;font-weight:600}
+  .maprow input,.maprow select{font-size:14px;padding:8px}
+  textarea{width:100%;font-size:13px;padding:9px;border:1px solid var(--line);border-radius:9px;font-family:ui-monospace,monospace}
   @media print{
     body{background:#fff}
     header,main,.actions{display:none!important}
@@ -141,6 +154,7 @@
   <div class="dhead"><div class="dlogo">🏷️</div><div><b>Label Printer</b><br><span class="muted">Zebra ZR328</span></div></div>
   <nav class="dnav">
     <button type="button" class="mi on" data-tab="label"><span class="ic">🏷️</span><span>Label</span></button>
+    <button type="button" class="mi" data-tab="count"><span class="ic">📋</span><span>Count</span></button>
     <button type="button" class="mi" data-tab="printer"><span class="ic">🖨️</span><span>Printer setup</span><i class="pdot" id="pdot2"></i></button>
     <button type="button" class="mi" data-tab="items"><span class="ic">📦</span><span>Item list</span></button>
     <button type="button" class="mi" data-tab="history"><span class="ic">🕘</span><span>History</span></button>
@@ -345,6 +359,114 @@
   </div>
   </section>
 
+  <section class="tab" id="tab-count" hidden>
+  <div class="pstat" id="cpstat"><span class="dot"></span><span id="cpstatText">Printer not connected</span><button type="button" class="small-btn" data-go="printer">Set up</button></div>
+  <div class="sstat" id="sstat"><span class="dot"></span><span id="sstatText">WeCom Smart Sheet not connected</span><button type="button" class="small-btn" id="sstatBtn">Set up</button></div>
+
+  <div class="card">
+    <h2>Counter</h2>
+    <div class="row">
+      <div class="field">
+        <label for="c_team"><span>Team <b class="req">*</b></span></label>
+        <select id="c_team"><option value="">Select</option></select>
+      </div>
+      <div class="field">
+        <label for="c_name"><span>Counter name <b class="req">*</b></span></label>
+        <input type="text" id="c_name" autocomplete="off" placeholder="Your name">
+      </div>
+    </div>
+    <div class="err" id="err_c_who"></div>
+  </div>
+
+  <div class="card">
+    <h2>Count</h2>
+    <div class="field">
+      <label for="c_loc"><span>Location <b class="req">*</b></span></label>
+      <div class="inwrap"><input type="text" id="c_loc" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Scan the location label"><button type="button" class="scan" data-f="c_loc" aria-label="Scan with camera">📷</button></div>
+      <div class="err" id="err_c_loc"></div>
+    </div>
+    <div class="field">
+      <label for="c_item"><span>Item code <b class="req">*</b></span></label>
+      <div class="inwrap" style="position:relative"><input type="text" id="c_item" autocomplete="off" autocorrect="off" spellcheck="false" autocapitalize="characters" placeholder="Type item code or name"><button type="button" class="scan" data-f="c_item" aria-label="Scan with camera">📷</button>
+        <div id="csugg" class="sugg" role="listbox"></div></div>
+      <div id="cItemInfo" class="iteminfo"></div>
+      <div class="err" id="err_c_item"></div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="c_qty"><span>Counted qty <b class="req">*</b></span></label>
+        <input type="text" id="c_qty" inputmode="decimal" autocomplete="off" placeholder="e.g. 500" class="bigqty">
+        <div class="err" id="err_c_qty"></div>
+      </div>
+      <div class="field">
+        <label for="c_unit">Unit</label>
+        <input type="text" id="c_unit" autocomplete="off" autocapitalize="characters" placeholder="PCS">
+      </div>
+    </div>
+    <div class="field">
+      <label for="c_lp">License plate</label>
+      <div class="inwrap"><input type="text" id="c_lp" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Optional"><button type="button" class="scan" data-f="c_lp" aria-label="Scan with camera">📷</button></div>
+      <div class="err" id="err_c_lp"></div>
+    </div>
+    <div class="field">
+      <label for="c_batch">Batch number</label>
+      <div class="inwrap"><input type="text" id="c_batch" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Optional"><button type="button" class="scan" data-f="c_batch" aria-label="Scan with camera">📷</button></div>
+      <div class="err" id="err_c_batch"></div>
+    </div>
+    <div class="field">
+      <label for="c_notes">Notes</label>
+      <input type="text" id="c_notes" autocomplete="off" placeholder="Optional, e.g. damaged box">
+    </div>
+    <div class="warnbox" id="c_dup" hidden></div>
+  </div>
+
+  <div class="card">
+    <h2>Count label preview</h2>
+    <div class="previewWrap"><div id="cpreview"></div></div>
+    <p class="muted" id="cpreviewNote"></p>
+  </div>
+
+  <div class="card">
+    <h2 style="display:flex;justify-content:space-between;align-items:center"><span>Counts on this phone</span> <span class="muted" id="cSummary"></span></h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button type="button" class="small-btn" id="cRetry">🔄 Send waiting</button>
+      <button type="button" class="small-btn" id="cExport">📤 Export Excel</button>
+      <button type="button" class="small-btn" id="cClearSent">Clear sent</button>
+    </div>
+    <ul class="hist" id="cList"></ul>
+    <p class="muted" id="cEmpty">Submitted counts show here with their tag number and sending status.</p>
+  </div>
+
+  <div class="card" id="cfgCard">
+    <h2>WeCom Smart Sheet connection</h2>
+    <div class="muted" style="margin-bottom:10px">Each submitted count is added as a new row in your Smart Sheet. In the Smart Sheet, open the sheet menu → 接收外部数据 (Receive external data), turn it on, then copy the Webhook address and the sample data (示例数据) here.</div>
+    <div class="field">
+      <label for="cfgUrl">Webhook address</label>
+      <input type="text" id="cfgUrl" autocomplete="off" spellcheck="false" placeholder="https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=…">
+    </div>
+    <div class="field">
+      <label for="cfgSample">Sample data (示例数据), optional</label>
+      <textarea id="cfgSample" rows="3" spellcheck="false" placeholder="Paste the sample JSON so the app can match the columns automatically"></textarea>
+      <div style="margin-top:6px"><button type="button" class="small-btn" id="cfgMatch">🔗 Match columns</button> <span class="muted" id="cfgMatchMsg"></span></div>
+    </div>
+    <div class="muted" style="margin:4px 0 8px">Column for each value. The name must match the Smart Sheet column title exactly. Leave empty to not send that value.</div>
+    <div id="cfgMap"></div>
+    <div class="field" style="margin-top:10px">
+      <label><span><input type="checkbox" id="cfgPhoto" checked> Ask for a photo after the label prints</span></label>
+      <div class="muted">Stick the label on the pallet, then take the photo. The photo is added to the same row.</div>
+    </div>
+    <div class="field">
+      <label><span><input type="checkbox" id="cfgPrint" checked> Print the count label when I submit</span></label>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="small-btn" id="cfgSave">💾 Save</button>
+      <button type="button" class="small-btn" id="cfgTest">🧪 Send a test row</button>
+    </div>
+    <div class="muted" id="cfgMsg" style="margin-top:8px"></div>
+  </div>
+  <input type="file" id="c_photoInput" accept="image/*" capture="environment" style="display:none">
+  </section>
+
   <section class="tab" id="tab-history" hidden>
   <div class="card">
     <h2 style="display:flex;justify-content:space-between;align-items:center">Print history <button class="small-btn" id="clearHist" type="button">Clear</button></h2>
@@ -357,6 +479,8 @@
 <div class="actions">
   <button type="button" id="clearBtn">Clear</button>
   <button type="button" class="primary" id="printBtn">🖨 Print</button>
+  <button type="button" id="cClearBtn" hidden>Clear</button>
+  <button type="button" class="primary" id="countBtn" hidden>✅ Submit &amp; print</button>
 </div>
 
 <div id="scanner">
@@ -454,6 +578,7 @@ function qrMatrix(v){
   catch(e){ return null; }
 }
 function layout(d, lp){
+  if (d && d.kind === "count") return countLayout(d);
   const dpmm = +$("dpi").value || 8;
   const [wmm,hmm] = SIZES[$("size").value];
   const W = Math.round(wmm*dpmm), H = Math.round(hmm*dpmm);
@@ -908,7 +1033,7 @@ async function doPrint(){
 
 /* ---------------- Camera scan (barcode + text) ---------------- */
 const scan = { field:null, stream:null, timer:null, detector:null, zx:null, busy:false };
-const FIELD_NAMES = {item:"item code", qty:"qty", batch:"batch number", lp:"license plate", loc:"location"};
+const FIELD_NAMES = {item:"item code", qty:"qty", batch:"batch number", lp:"license plate", loc:"location", c_item:"item code", c_loc:"location", c_lp:"license plate", c_batch:"batch number"};
 function loadScript(src){ return new Promise((ok, no) => { const el = document.createElement("script"); el.src = src; el.onload = ok; el.onerror = () => no(new Error("Could not load " + src)); document.head.appendChild(el); }); }
 function scanMsg(t){ $("scanStatus").textContent = t; }
 
@@ -988,11 +1113,11 @@ function acceptScan(text){
   text = String(text).replace(/[\x00-\x1f]/g, "").trim();
   if (!text) return;
   const f = scan.field;
-  if (f === "item"){ const m = findExact(text) || bestFuzzy(text); $(f).value = m ? m[0] : text; updateItemInfo(); }
+  if (f === "item" || f === "c_item"){ const m = findExact(text) || bestFuzzy(text); $(f).value = m ? m[0] : text; f === "item" ? updateItemInfo() : updateCItemInfo(); }
   else $(f).value = f === "qty" ? text : text.toUpperCase();
   try { navigator.vibrate && navigator.vibrate(80); } catch(e){}
   closeScanner();
-  render();
+  render(); if (f.startsWith("c_")){ countRender(); if (f === "c_loc") setTimeout(() => $("c_item").focus(), 200); }
   $(f).classList.add("flash"); setTimeout(() => $(f).classList.remove("flash"), 800);
 }
 
@@ -1063,7 +1188,7 @@ function showCandidates(raw){
     .filter(t => t.length >= 2 && /[A-Z0-9]/.test(t) && !/^(ITEM|CODE|QTY|BATCH|LP|LICENSE|PLATE|LOCATION|DATE|NO|NUMBER)$/.test(t)))]
     .sort((a, b) => (/\d/.test(b) - /\d/.test(a)) || b.length - a.length).slice(0, 8);
   if (!toks.length){ scanMsg("Nothing readable found. Take the photo closer, in good light, and try again."); return; }
-  if (scan.field === "item" && ITEMS.length){
+  if ((scan.field === "item" || scan.field === "c_item") && ITEMS.length){
     const seen = new Set(), hits = [];
     for (const t of toks){ for (const m of fuzzyList(t, 3)) if (!seen.has(m[0])){ seen.add(m[0]); hits.push(m); } }
     if (hits.length){
@@ -1224,16 +1349,22 @@ function BUILTIN_ITEMS(){ try { return JSON.parse(document.getElementById("itemD
 })();
 
 /* ---------------- Tabs ---------------- */
-const TABS = ["label","printer","items","history"];
+const TABS = ["label","count","printer","items","history"];
 function showTab(t){
   if (!TABS.includes(t)) t = "label";
   TABS.forEach(n => { $("tab-" + n).hidden = n !== t; });
   document.querySelectorAll(".mi").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   $("pageTitle").textContent = PAGE[t][0]; $("pageSub").textContent = PAGE[t][1];
   closeMenu();
-  document.querySelector(".actions").style.display = t === "label" ? "" : "none";
-  document.querySelector("main").style.marginBottom = t === "label" ? "" : "24px";
+  const bar = t === "label" || t === "count";
+  document.querySelector(".actions").style.display = bar ? "" : "none";
+  document.querySelector("main").style.marginBottom = bar ? "" : "24px";
+  ["clearBtn","printBtn"].forEach(id => $(id).hidden = t !== "label");
+  ["cClearBtn","countBtn"].forEach(id => $(id).hidden = t !== "count");
+  $("countBtn").textContent = CFG.print !== false ? "✅ Submit & print" : "✅ Submit";
+  store.set("lbl_tab", t);
   if (t === "label") render();
+  if (t === "count"){ countRender(); renderCounts(); }
   if (t === "items") renderBrowse();
   window.scrollTo(0, 0);
 }
@@ -1241,7 +1372,8 @@ const PAGE = {
   label:   ["Label", "Fill in the fields, check the preview, then tap Print"],
   printer: ["Printer setup", "Connect the Zebra and choose the label size"],
   items:   ["Item list", "Search items and update the D365 list"],
-  history: ["History", "Labels printed on this phone"]
+  history: ["History", "Labels printed on this phone"],
+  count:   ["Count", "Count stock, print the count label and send it to WeCom"]
 };
 function openMenu(){ $("drawer").classList.add("open"); $("scrim").classList.add("open"); $("drawer").setAttribute("aria-hidden", "false"); }
 function closeMenu(){ $("drawer").classList.remove("open"); $("scrim").classList.remove("open"); $("drawer").setAttribute("aria-hidden", "true"); }
@@ -1276,8 +1408,545 @@ $("browseList").addEventListener("click", e => {
   $("item").value = b.dataset.code; updateItemInfo(); showTab("label"); $("qty").focus();
 });
 
+/* ---------------- Stock take / cycle count ---------------- */
+const TEAMS = Array.from({length: 10}, (_, i) => "T" + String(i + 1).padStart(2, "0"));
+TEAMS.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; $("c_team").appendChild(o); });
+const pad = (n, l) => String(n).padStart(l, "0");
+function fmtTime(ms){ const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth()+1,2)}-${pad(d.getDate(),2)} ${pad(d.getHours(),2)}:${pad(d.getMinutes(),2)}`; }
+function dayKey(ms){ const d = new Date(ms); return pad(d.getMonth()+1,2) + pad(d.getDate(),2); }
+
+/* ---- count label layout (used by preview, phone print and ZPL through layout()) ---- */
+function countLayout(d){
+  const dpmm = +$("dpi").value || 8;
+  const [wmm, hmm] = SIZES[$("size").value];
+  const W = Math.round(wmm*dpmm), H = Math.round(hmm*dpmm);
+  const M = Math.round(2.0*dpmm), cw = W - 2*M;
+  const base = 43.5;                                     // mm of content at scale 1
+  const f = Math.max(0.6, Math.min(1.15, (hmm - 4) / base));   // width is fixed, so text grows only a little
+  const mm = v => Math.round(v*dpmm*f);
+  const it = [];
+  const txt = (s, x, y, h, w, bold, align) => { if (!s) return; const hh = fitH(s, h, w, bold); it.push({k:"text", x, y: y + (h - hh), h:hh, w, s, bold, align}); };
+  const line = y => it.push({k:"line", x:M, y, w:cw});
+  const titled = (title, val, x, y, w, vh) => {         // "TITLE  value" on one line
+    const S = Math.min(mm(2.5), vh);
+    const tw = textW(title, S, true);
+    it.push({k:"text", x, y: y + Math.round((vh - S)*0.78), h:S, w:tw + 2, s:title, bold:true});
+    const off = tw + Math.round(1.4*dpmm);
+    txt(val || "", x + off, y, vh, w - off, true);
+  };
+  let y = M;
+  // header
+  const hh = mm(5.2), sh = mm(2.5);
+  const rightTop = [d.team, d.time ? fmtTime(d.time).slice(5) : ""].filter(Boolean).join("  ");
+  const rw = Math.max(textW(rightTop, sh, true), textW(d.counter || "", sh, true)) + 4;
+  txt("已盘点 COUNTED", M, y, hh, cw - rw - mm(2), true);
+  it.push({k:"text", x:M + cw - rw, y, h:sh, w:rw, s:rightTop, bold:true, align:"R"});
+  if (d.counter){ const ch = fitH(d.counter, sh, rw, true); it.push({k:"text", x:M + cw - rw, y: y + sh + mm(0.3), h:ch, w:rw, s:d.counter, bold:true, align:"R"}); }
+  y += hh + mm(0.6); line(y); y += mm(1.0);
+  // tag + barcode
+  titled("标签 TAG", d.tag, M, y, cw, mm(3.6)); y += mm(3.6) + mm(0.5);
+  const bh = mm(6.5);
+  if (d.tag && validB(d.tag)){
+    const mw = Math.max(1, Math.min(3, Math.floor(cw / (bcModules(d.tag) + 10))));
+    it.push({k:"bar", x:M, y, h:bh, mw, v:d.tag});
+  }
+  y += bh + mm(0.6); line(y); y += mm(1.0);
+  // item
+  titled("物料 ITEM", d.item, M, y, cw, mm(4.6)); y += mm(4.6);
+  if (d.name && hmm >= 70){ y += mm(0.5); txt(d.name, M, y, mm(2.8), cw, false); y += mm(2.8); }
+  y += mm(0.6); line(y); y += mm(1.0);
+  // lower block: details left, QR right
+  const lowTop = y, avail = H - M - lowTop;
+  const qrData = [d.tag, d.item, d.qty, d.loc, d.lp || "", d.batch || ""].join("|");
+  const qm = qrMatrix(qrData);
+  let mag = 2, qs = 0;
+  if (qm){ const n = qm.length; mag = Math.max(2, Math.floor(Math.min(avail, mm(21)) / n)); qs = n*mag; }
+  const gap = Math.round(2*dpmm), leftW = cw - qs - gap;
+  const rowsH = [mm(5.6), mm(3.4), mm(3.4), mm(3.4)];
+  const rg = Math.max(2, Math.floor((avail - rowsH.reduce((a, b) => a + b, 0)) / 3));
+  let ly = lowTop;
+  titled("数量 QTY", d.qty ? d.qty + (d.unit ? " " + d.unit : "") : "", M, ly, leftW, rowsH[0]); ly += rowsH[0] + rg;
+  titled("库位 LOC", d.loc, M, ly, leftW, rowsH[1]); ly += rowsH[1] + rg;
+  titled("托盘 LP", d.lp || "-", M, ly, leftW, rowsH[2]); ly += rowsH[2] + rg;
+  titled("批次 BATCH", d.batch || "-", M, ly, leftW, rowsH[3]);
+  if (qm) it.push({k:"qr", x:M + cw - qs, y:lowTop, mag, m:qm, v:qrData});
+  return {W, H, dpmm, items: it};
+}
+
+/* ---- local storage of counts (IndexedDB, photos included) ---- */
+const CDB = (() => {
+  let dbp = null, mem = new Map();
+  const open = () => dbp || (dbp = new Promise(res => {
+    try {
+      const r = indexedDB.open("lp_counts", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("counts", {keyPath: "tag"});
+      r.onsuccess = () => res(r.result); r.onerror = () => res(null);
+    } catch(e){ res(null); }
+  }));
+  const tx = async (mode, fn) => { const db = await open(); if (!db) return fn(null); return new Promise((ok, no) => { const t = db.transaction("counts", mode); const st = t.objectStore("counts"); const out = fn(st); t.oncomplete = () => ok(out && out.result !== undefined ? out.result : out); t.onerror = () => no(t.error); }); };
+  return {
+    async put(r){ const db = await open(); if (!db){ mem.set(r.tag, r); return; } await tx("readwrite", st => st.put(r)); },
+    async del(tag){ const db = await open(); if (!db){ mem.delete(tag); return; } await tx("readwrite", st => st.delete(tag)); },
+    async all(){ const db = await open(); if (!db) return [...mem.values()]; const req = await tx("readonly", st => st.getAll()); return (req || []).sort((a, b) => b.time - a.time); }
+  };
+})();
+
+/* ---- settings ---- */
+const MAP_KEYS = [
+  ["tag",     "Tag no.",      "标签号 Tag no.", "text",   /标签|tag/i],
+  ["team",    "Team",         "小组 Team",      "select", /小组|team/i],
+  ["loc",     "Location",     "库位 Location",  "text",   /库位|location|loc/i],
+  ["item",    "Item",         "物料 Item",      "text",   /物料|item/i],
+  ["qty",     "Qty",          "数量 Qty",       "number", /数量|qty|quantity/i],
+  ["unit",    "Unit",         "",               "text",   /单位|unit/i],
+  ["lp",      "License plate","LP 托盘号",      "text",   /托盘|\blp\b|license/i],
+  ["batch",   "Batch",        "批次 Batch",     "text",   /批次|batch/i],
+  ["counter", "Counter name", "",               "text",   /盘点人姓名|counter name|姓名/i],
+  ["time",    "Count time",   "",               "date",   /盘点时间|count time/i],
+  ["notes",   "Notes",        "备注 Notes",     "text",   /备注|note/i],
+  ["photo",   "Photo",        "照片 Photo",     "image",  /照片|photo|图片/i]
+];
+const TYPES = ["text","number","select","date","image"];
+function defaultCfg(){ const map = {}; MAP_KEYS.forEach(([k,,def,type]) => map[k] = {field: def, type}); return {url: "", map, photo: true, print: true}; }
+let CFG = Object.assign(defaultCfg(), store.get("st_cfg", {}));
+CFG.map = Object.assign(defaultCfg().map, CFG.map || {});
+let SAMPLE_TITLES = store.get("st_titles", {});   // field id -> title, from pasted sample data
+
+function renderCfg(){
+  $("cfgUrl").value = CFG.url || "";
+  $("cfgPhoto").checked = CFG.photo !== false; $("cfgPrint").checked = CFG.print !== false;
+  const titles = Object.entries(SAMPLE_TITLES);
+  $("cfgMap").innerHTML = MAP_KEYS.map(([k, label]) => {
+    const m = CFG.map[k] || {field: "", type: "text"};
+    const shown = SAMPLE_TITLES[m.field] || m.field || "";
+    return `<div class="maprow"><span class="mk">${esc(label)}</span>
+      <input type="text" data-mk="${k}" value="${esc(shown)}" list="cfgTitles" placeholder="(not sent)" autocomplete="off">
+      <select data-mt="${k}">${TYPES.map(t => `<option value="${t}"${t === m.type ? " selected" : ""}>${t}</option>`).join("")}</select></div>`;
+  }).join("") + `<datalist id="cfgTitles">${titles.map(([, t]) => `<option value="${esc(t)}">`).join("")}</datalist>`;
+  updateSheetStatus();
+}
+function readCfg(){
+  const idByTitle = {}; Object.entries(SAMPLE_TITLES).forEach(([id, t]) => idByTitle[t] = id);
+  CFG.url = $("cfgUrl").value.trim();
+  CFG.photo = $("cfgPhoto").checked; CFG.print = $("cfgPrint").checked;
+  MAP_KEYS.forEach(([k]) => {
+    const v = document.querySelector(`[data-mk="${k}"]`).value.trim();
+    CFG.map[k] = {field: idByTitle[v] || v, type: document.querySelector(`[data-mt="${k}"]`).value};
+  });
+  store.set("st_cfg", CFG);
+}
+function cfgOk(){ return /^https:\/\/qyapi\.weixin\.qq\.com\/cgi-bin\/wedoc\/smartsheet\/webhook\?key=[\w-]+/.test(CFG.url || ""); }
+function updateSheetStatus(){
+  const ok = cfgOk();
+  $("sstatText").textContent = ok ? "Sending counts to WeCom Smart Sheet" : "WeCom Smart Sheet not connected. Counts are kept on this phone.";
+  $("sstat").classList.toggle("ok", ok);
+  $("sstatBtn").textContent = ok ? "Change" : "Set up";
+}
+function guessType(v){
+  if (typeof v === "number") return "number";
+  if (typeof v === "string") return /^\d{12,13}$/.test(v) || /^\d{4}-\d\d-\d\d/.test(v) ? "date" : "text";
+  if (Array.isArray(v) && v[0] && typeof v[0] === "object"){
+    if ("image_base64" in v[0] || "image_url" in v[0]) return "image";
+    if (v[0].type === "text") return "text";
+    if ("text" in v[0]) return "select";
+  }
+  return "text";
+}
+function matchSample(){
+  readCfg();
+  let j;
+  try { j = JSON.parse($("cfgSample").value); } catch(e){ $("cfgMatchMsg").textContent = "This isn't valid JSON. Copy the whole sample data."; return; }
+  const schema = j.schema || {};
+  const vals = (j.add_records && j.add_records[0] && j.add_records[0].values) || {};
+  const ids = Object.keys(schema).length ? Object.keys(schema) : Object.keys(vals);
+  if (!ids.length){ $("cfgMatchMsg").textContent = "No columns found in the sample data."; return; }
+  SAMPLE_TITLES = {}; ids.forEach(id => SAMPLE_TITLES[id] = schema[id] || id);
+  store.set("st_titles", SAMPLE_TITLES);
+  let n = 0; const used = new Set();
+  MAP_KEYS.forEach(([k,,, , rx]) => {
+    const id = ids.find(i => !used.has(i) && rx.test(SAMPLE_TITLES[i]));
+    if (id){ used.add(id); CFG.map[k] = {field: id, type: id in vals ? guessType(vals[id]) : CFG.map[k].type}; n++; }
+    else CFG.map[k] = {field: "", type: CFG.map[k].type};
+  });
+  store.set("st_cfg", CFG);
+  renderCfg();
+  $("cfgMatchMsg").textContent = `Matched ${n} of ${ids.length} columns. Check them below, then Save.`;
+}
+
+/* ---- sending to WeCom ---- */
+async function httpPostJson(url, obj){
+  const body = JSON.stringify(obj);
+  if (NATIVE && window.AndroidPrinter && AndroidPrinter.httpPost){
+    const r = await nativeCall(cb => AndroidPrinter.httpPost(url, body, cb));
+    if (!r.ok) throw new Error(r.msg || "No answer from WeCom");
+    try { return JSON.parse(r.msg); } catch(e){ throw new Error("Unexpected answer: " + String(r.msg).slice(0, 120)); }
+  }
+  let res;
+  try { res = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body}); }
+  catch(e){ throw new Error(navigator.onLine === false ? "No internet" : "The browser blocked sending. Use the Android app (APK) to send counts"); }
+  return res.json();
+}
+function cellValue(type, v, rec){
+  if (type === "number"){ const n = Number(v); return isNaN(n) ? String(v) : n; }
+  if (type === "select") return [{text: String(v)}];
+  if (type === "date") return typeof v === "number" ? String(v) : String(v);
+  if (type === "image") return [{title: rec.tag + ".jpg", image_base64: String(v).replace(/^data:image\/\w+;base64,/, "")}];
+  return String(v);
+}
+function recordValues(rec, onlyPhoto){
+  const src = {tag: rec.tag, team: rec.team, loc: rec.loc, item: rec.item, qty: rec.qty, unit: rec.unit, lp: rec.lp, batch: rec.batch, counter: rec.counter, time: rec.time, notes: rec.notes, photo: rec.photo};
+  const out = {};
+  for (const [k] of MAP_KEYS){
+    if (onlyPhoto && k !== "photo") continue;
+    if (!onlyPhoto && k === "photo") continue;
+    const m = CFG.map[k]; const v = src[k];
+    if (!m || !m.field || v === undefined || v === null || v === "") continue;
+    out[m.field] = cellValue(m.type, v, rec);
+  }
+  return out;
+}
+function wecomErr(j){
+  return `WeCom error ${j.errcode}: ${j.errmsg || "unknown"}. Check the Webhook address and column names`;
+}
+let sending = false;
+async function sendOne(rec){
+  if (!rec.sent){
+    const j = await httpPostJson(CFG.url, {add_records: [{values: recordValues(rec, false)}]});
+    if (!j || j.errcode !== 0) throw new Error(wecomErr(j || {}));
+    rec.sent = true; rec.sentAt = Date.now();
+    rec.recordId = j.add_records && j.add_records[0] && j.add_records[0].record_id || "";
+    rec.err = ""; await CDB.put(rec);
+  }
+  if (rec.photo && !rec.photoSent && CFG.map.photo && CFG.map.photo.field){
+    if (!rec.recordId) throw new Error("WeCom did not return the row ID, so the photo can't be added");
+    const j = await httpPostJson(CFG.url, {update_records: [{record_id: rec.recordId, values: recordValues(rec, true)}]});
+    if (!j || j.errcode !== 0) throw new Error("Photo: " + wecomErr(j || {}));
+    rec.photoSent = true; rec.photo = null; rec.hadPhoto = true; rec.err = ""; await CDB.put(rec);
+  }
+}
+async function sendWaiting(manual){
+  if (sending) return;
+  if (!cfgOk()){ if (manual) showToast("Set up the WeCom Smart Sheet connection first."); return; }
+  sending = true;
+  let ok = 0, bad = 0, lastErr = "";
+  try {
+    const list = (await CDB.all()).filter(r => !r.sent || (r.photo && !r.photoSent)).reverse();
+    for (const r of list){
+      try { await sendOne(r); ok++; }
+      catch(e){ bad++; lastErr = e.message || String(e); r.err = lastErr; await CDB.put(r); if (/No internet|blocked/.test(lastErr)) break; }
+    }
+  } finally { sending = false; }
+  await renderCounts();
+  if (manual) showToast(bad ? `Sent ${ok}, ${bad} still waiting: ${lastErr}` : ok ? `✅ Sent ${ok} to WeCom` : "Nothing waiting to send.");
+}
+
+/* ---- form ---- */
+const CF = ["c_loc","c_item","c_qty","c_unit","c_lp","c_batch","c_notes"];
+function readCount(){
+  const o = {kind: "count"};
+  o.team = $("c_team").value; o.counter = $("c_name").value.trim();
+  o.loc = $("c_loc").value.trim(); o.item = $("c_item").value.trim(); o.qty = $("c_qty").value.trim();
+  o.unit = $("c_unit").value.trim(); o.lp = $("c_lp").value.trim(); o.batch = $("c_batch").value.trim(); o.notes = $("c_notes").value.trim();
+  o.name = o.item ? itemName(o.item) : "";
+  return o;
+}
+function nextTag(team, ms){
+  const key = (team || "T00") + "-" + dayKey(ms);
+  const seq = store.get("st_seq", {});
+  return {key, n: (seq[key] || 0) + 1, tag: `ST-${key}-${pad((seq[key] || 0) + 1, 4)}`};
+}
+function useTag(key, n){ const seq = store.get("st_seq", {}); seq[key] = Math.max(seq[key] || 0, n); store.set("st_seq", seq); }
+function cErr(id, msg){ $("err_" + id).textContent = msg || ""; if ($(id)) $(id).classList.toggle("bad", !!msg); return !msg; }
+function validateCount(c, req){
+  let ok = true;
+  const set = (id, m) => { if (!cErr(id, m)) ok = false; };
+  $("err_c_who").textContent = "";
+  ["c_loc","c_item","c_lp","c_batch"].forEach(id => set(id, $(id).value && !validB($(id).value.trim()) ? "Use only standard letters, numbers and symbols." : ""));
+  if (c.qty && (isNaN(Number(c.qty)) || Number(c.qty) < 0)) set("c_qty", "Qty should be a number (0 or more)."); else set("c_qty", "");
+  if (req){
+    if (!c.team || !c.counter){ $("err_c_who").textContent = "Choose your team and enter your name."; ok = false; }
+    if (!c.loc) set("c_loc", "Scan or type the location.");
+    if (!c.item) set("c_item", "Item code is required.");
+    if (!c.qty) set("c_qty", "Enter the counted qty.");
+  }
+  return ok;
+}
+function countRender(){
+  if ($("tab-count").hidden) return;
+  const c = readCount(), now = Date.now();
+  validateCount(c, false);
+  const t = nextTag(c.team, now);
+  $("cpreview").innerHTML = labelHtml({...c, tag: t.tag, time: now});
+  $("cpreview").style.zoom = 1;
+  const lab = $("cpreview").firstElementChild;
+  $("cpreview").style.zoom = Math.min(1.6, ($("cpreview").parentElement.clientWidth - 16) / lab.offsetWidth);
+  const [w, h] = SIZES[$("size").value];
+  $("cpreviewNote").textContent = `Next tag ${t.tag} · ${w} × ${h} mm`;
+  store.set("st_draft", {team: c.team, counter: c.counter, loc: c.loc, unit: c.unit});
+  store.set("st_who", {team: c.team, counter: c.counter});
+  $("c_dup").hidden = true; dupArmed = null;
+}
+function updateCItemInfo(){
+  const v = $("c_item").value.trim(), el = $("cItemInfo");
+  if (!v || !ITEMS.length){ el.textContent = ""; el.className = "iteminfo"; return; }
+  const m = findExact(v);
+  if (m && m[0] === v){ el.textContent = "✓ " + (m[1] || "In item list"); el.className = "iteminfo ok"; }
+  else if (m){ el.innerHTML = `⚠ D365 code is <b>${esc(m[0])}</b> <button type="button" class="small-btn" id="cFixItem">Use it</button>`; el.className = "iteminfo warn"; }
+  else { el.textContent = "⚠ Not in item list. Check the code."; el.className = "iteminfo warn"; }
+}
+let csAct = -1, csRows = [];
+function showCSugg(){
+  const q = $("c_item").value;
+  if (!ITEMS.length || q.trim().length < 2){ $("csugg").classList.remove("open"); return; }
+  const {list, total} = searchItems(q, 30); csRows = list; csAct = -1;
+  $("csugg").innerHTML = list.length ? list.map((r, i) => `<div class="opt" role="option" data-i="${i}"><div class="c">${hl(r[0], q)}</div>${r[1] ? `<div class="n">${hl(r[1], q)}</div>` : ""}</div>`).join("")
+    + (total > list.length ? `<div class="more">${total - list.length} more, keep typing to narrow down</div>` : "") : `<div class="more">No matching item in the list</div>`;
+  $("csugg").classList.add("open");
+}
+function pickCSugg(i){ const r = csRows[i]; if (!r) return; $("c_item").value = r[0]; $("csugg").classList.remove("open"); updateCItemInfo(); countRender(); $("c_qty").focus(); }
+
+/* ---- print ---- */
+async function printCountLabel(rec){
+  const d = {...rec, kind: "count"};
+  if ($("method").value === "bt"){
+    let zpl = $("setzpl").checked ? '! U1 setvar "device.languages" "hybrid_xml_zpl"\r\n' : "";
+    zpl += zplJob(d, [""]);
+    const ok = await btSend(zpl);
+    if (!ok) throw new Error("Printer not connected");
+    return true;
+  }
+  $("printArea").innerHTML = labelHtml(d);
+  setTimeout(() => { try { window.print(); } catch(e){} }, 50);
+  return true;
+}
+
+/* ---- submit ---- */
+let dupArmed = null, submitting = false;
+async function submitCount(){
+  if (submitting) return;
+  const c = readCount();
+  if (!validateCount(c, true)){
+    const first = ["c_name","c_loc","c_item","c_qty"].find(id => (id === "c_name" ? !(c.team && c.counter) : $(id).classList.contains("bad")));
+    if (first){ $(first).scrollIntoView({behavior: "smooth", block: "center"}); setTimeout(() => $(first).focus(), 300); }
+    showToast("Fill in the required fields first.");
+    return;
+  }
+  const all = await CDB.all();
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  const dup = all.find(r => r.time >= today0.getTime() && r.loc.toUpperCase() === c.loc.toUpperCase() && r.item.toUpperCase() === c.item.toUpperCase() && (r.lp || "") === c.lp && (r.batch || "") === c.batch);
+  const sig = [c.loc, c.item, c.lp, c.batch].join("|");
+  if (dup && dupArmed !== sig){
+    dupArmed = sig;
+    $("c_dup").hidden = false;
+    $("c_dup").textContent = `⚠ Already counted today: ${dup.tag}, qty ${dup.qty}. Tap Submit again to add another count.`;
+    $("c_dup").scrollIntoView({behavior: "smooth", block: "center"});
+    return;
+  }
+  submitting = true; $("countBtn").disabled = true;
+  const now = Date.now(), t = nextTag(c.team, now);
+  const rec = {tag: t.tag, time: now, team: c.team, counter: c.counter, loc: c.loc.toUpperCase(), item: c.item, name: c.name, qty: c.qty, unit: c.unit.toUpperCase(),
+               lp: c.lp.toUpperCase(), batch: c.batch.toUpperCase(), notes: c.notes, sent: false, photo: null, photoSent: false, printed: false, err: ""};
+  useTag(t.key, t.n);
+  await CDB.put(rec);
+  let printMsg = "";
+  if (CFG.print !== false){
+    try { await printCountLabel(rec); rec.printed = true; await CDB.put(rec); }
+    catch(e){ printMsg = " Label not printed: " + (e.message || e); }
+  }
+  ["c_item","c_qty","c_lp","c_batch","c_notes"].forEach(id => $(id).value = "");
+  updateCItemInfo(); dupArmed = null; $("c_dup").hidden = true;
+  submitting = false; $("countBtn").disabled = false;
+  countRender(); await renderCounts();
+  sendWaiting(false).then(renderCounts);
+  if (CFG.photo !== false){
+    showToast(`✅ ${rec.tag} saved.${printMsg} Stick the label, then take the photo.`, "📷 Photo", () => takePhotoFor(rec.tag));
+  } else {
+    showToast(`✅ ${rec.tag} saved.${printMsg}`, printMsg ? "Reprint" : null, printMsg ? () => reprintCount(rec.tag) : null);
+    $("c_item").focus();
+  }
+}
+
+/* ---- photo ---- */
+let photoFor = null;
+function takePhotoFor(tag){ photoFor = tag; $("c_photoInput").value = ""; $("c_photoInput").click(); }
+function shrinkPhoto(file){
+  return new Promise((ok, no) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const max = 1280, s = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      ok(c.toDataURL("image/jpeg", 0.72));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); no(new Error("Couldn't open the photo")); };
+    img.src = url;
+  });
+}
+$("c_photoInput").addEventListener("change", async e => {
+  const f = e.target.files[0], tag = photoFor; photoFor = null;
+  if (!f || !tag) return;
+  try {
+    const rec = (await CDB.all()).find(r => r.tag === tag); if (!rec) return;
+    rec.photo = await shrinkPhoto(f); rec.photoSent = false; rec.hadPhoto = true;
+    await CDB.put(rec); await renderCounts();
+    showToast(`📷 Photo added to ${tag}`);
+    sendWaiting(false).then(renderCounts);
+  } catch(err){ showToast(err.message || String(err)); }
+  $("c_item").focus();
+});
+
+/* ---- list ---- */
+async function reprintCount(tag){
+  const rec = (await CDB.all()).find(r => r.tag === tag); if (!rec) return;
+  try { await printCountLabel(rec); rec.printed = true; await CDB.put(rec); showToast(`🖨 Reprinted ${tag}`); }
+  catch(e){ showToast("Print failed: " + (e.message || e)); }
+  renderCounts();
+}
+async function renderCounts(){
+  const all = await CDB.all();
+  const waiting = all.filter(r => !r.sent || (r.photo && !r.photoSent)).length;
+  $("cSummary").textContent = all.length ? `${all.length} counts · ${waiting} waiting` : "";
+  $("cEmpty").style.display = all.length ? "none" : "block";
+  $("cRetry").disabled = !waiting;
+  const st = r => r.sent ? (r.photo && !r.photoSent ? "⏳ photo waiting" : "✅ sent") : cfgOk() ? "⏳ waiting" : "💾 on phone";
+  $("cList").innerHTML = all.slice(0, 200).map(r => `<li><span><b>${esc(r.tag)}</b> · ${esc(r.item)} · <b>${esc(r.qty)}</b> ${esc(r.unit || "")}<br>
+    <span class="muted">${esc(r.loc)}${r.lp ? " · LP " + esc(r.lp) : ""}${r.batch ? " · " + esc(r.batch) : ""} · ${esc(fmtTime(r.time).slice(5))}</span><br>
+    <span class="cst"><span>${st(r)}</span> ${r.printed ? "· 🖨" : `<span>· not printed</span>`}${r.photoSent || r.photo ? " · 📷" : ""}</span>${r.err ? `<br><span class="cerr">${esc(r.err)}</span>` : ""}</span>
+    <span class="cbtns"><button type="button" data-rp="${esc(r.tag)}">Reprint</button>${!r.photoSent ? `<button type="button" data-ph="${esc(r.tag)}">📷</button>` : ""}</span></li>`).join("");
+}
+$("cList").addEventListener("click", e => {
+  const a = e.target.closest("button[data-rp]"); if (a) return reprintCount(a.dataset.rp);
+  const b = e.target.closest("button[data-ph]"); if (b) return takePhotoFor(b.dataset.ph);
+});
+$("cRetry").addEventListener("click", () => sendWaiting(true));
+$("cClearSent").addEventListener("click", async () => {
+  const done = (await CDB.all()).filter(r => r.sent && !(r.photo && !r.photoSent));
+  for (const r of done) await CDB.del(r.tag);
+  renderCounts(); showToast(`Removed ${done.length} sent counts from this phone.`);
+});
+
+/* ---- export ---- */
+async function saveFileOut(name, bytes, mime){
+  if (NATIVE && window.AndroidPrinter && AndroidPrinter.saveFile){
+    let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    const r = await nativeCall(cb => AndroidPrinter.saveFile(name, btoa(bin), mime, cb));
+    if (!r.ok) throw new Error(r.msg || "Couldn't save the file");
+    return r.msg;
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([bytes], {type: mime})); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  return "Downloads";
+}
+async function exportCounts(){
+  const all = (await CDB.all()).slice().reverse();
+  if (!all.length){ showToast("No counts to export."); return; }
+  const head = ["Tag no.","Count time","Team","Counter","Location","Item","Product name","Qty","Unit","LP","Batch","Notes","Sent to WeCom","Photo"];
+  const rows = all.map(r => [r.tag, fmtTime(r.time), r.team, r.counter, r.loc, r.item, r.name || "", Number(r.qty), r.unit || "", r.lp || "", r.batch || "", r.notes || "", r.sent ? "Yes" : "No", r.photoSent ? "Sent" : r.photo ? "Waiting" : "No"]);
+  const stamp = fmtTime(Date.now()).replace(/[-: ]/g, "").slice(0, 12);
+  const team = $("c_team").value || "team";
+  try {
+    if (!window.XLSX) await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
+    const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
+    ws["!cols"] = head.map((h, i) => ({wch: [18,17,6,12,14,18,30,8,6,12,14,20,8,8][i]}));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Counts");
+    const out = new Uint8Array(XLSX.write(wb, {bookType: "xlsx", type: "array"}));
+    const where = await saveFileOut(`Counts_${team}_${stamp}.xlsx`, out, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    showToast(`📤 Saved Counts_${team}_${stamp}.xlsx to ${where}`);
+  } catch(e){
+    const csv = "﻿" + [head, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    try { const where = await saveFileOut(`Counts_${team}_${stamp}.csv`, new TextEncoder().encode(csv), "text/csv"); showToast(`📤 Saved Counts_${team}_${stamp}.csv to ${where}`); }
+    catch(e2){ showToast("Export failed: " + (e2.message || e2)); }
+  }
+}
+$("cExport").addEventListener("click", exportCounts);
+
+/* ---- wire up ---- */
+$("countBtn").addEventListener("click", submitCount);
+$("cClearBtn").addEventListener("click", () => { ["c_item","c_qty","c_lp","c_batch","c_notes"].forEach(id => $(id).value = ""); updateCItemInfo(); countRender(); $("c_item").focus(); });
+["c_team","c_name",...CF].forEach(id => $(id).addEventListener("input", countRender));
+["c_loc","c_unit","c_lp","c_batch"].forEach(id => $(id).addEventListener("input", e => {
+  const p = e.target.selectionStart; e.target.value = e.target.value.toUpperCase(); try { e.target.setSelectionRange(p, p); } catch(_){}
+}));
+$("c_item").addEventListener("input", () => { showCSugg(); updateCItemInfo(); });
+$("c_item").addEventListener("focus", showCSugg);
+$("c_item").addEventListener("blur", () => setTimeout(() => $("csugg").classList.remove("open"), 150));
+$("c_item").addEventListener("keydown", e => {
+  if (!$("csugg").classList.contains("open")) return;
+  const opts = $("csugg").querySelectorAll(".opt");
+  if (e.key === "ArrowDown" || e.key === "ArrowUp"){ e.preventDefault(); csAct = Math.max(0, Math.min(opts.length - 1, csAct + (e.key === "ArrowDown" ? 1 : -1))); opts.forEach((o, i) => o.classList.toggle("act", i === csAct)); }
+  else if (e.key === "Enter"){ e.preventDefault(); pickCSugg(csAct >= 0 ? csAct : 0); }
+  else if (e.key === "Escape") $("csugg").classList.remove("open");
+});
+$("csugg").addEventListener("mousedown", e => e.preventDefault());
+$("csugg").addEventListener("click", e => { const o = e.target.closest(".opt"); if (o) pickCSugg(+o.dataset.i); });
+$("cItemInfo").addEventListener("click", e => { if (e.target.id === "cFixItem"){ const m = findExact($("c_item").value); if (m){ $("c_item").value = m[0]; updateCItemInfo(); countRender(); } } });
+$("c_loc").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); $("c_item").focus(); } });
+$("c_qty").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); submitCount(); } });
+$("sstatBtn").addEventListener("click", () => $("cfgCard").scrollIntoView({behavior: "smooth", block: "start"}));
+$("cfgSave").addEventListener("click", () => { readCfg(); updateSheetStatus(); renderCounts(); $("cfgMsg").textContent = cfgOk() ? "✅ Saved." : CFG.url ? "⚠ Saved, but the Webhook address doesn't look right. It should start with https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=" : "Saved. No Webhook address, so counts stay on this phone."; });
+$("cfgMatch").addEventListener("click", matchSample);
+$("cfgTest").addEventListener("click", async () => {
+  readCfg(); updateSheetStatus();
+  if (!cfgOk()){ $("cfgMsg").textContent = "Paste the Webhook address first."; return; }
+  $("cfgMsg").textContent = "Sending test row…";
+  const rec = {tag: "TEST-" + dayKey(Date.now()), team: $("c_team").value || "T01", loc: "TEST", item: "TEST", qty: "0", unit: "", lp: "", batch: "", counter: $("c_name").value || "test", time: Date.now(), notes: "Test row from Label Printer app, delete it"};
+  try {
+    const j = await httpPostJson(CFG.url, {add_records: [{values: recordValues(rec, false)}]});
+    $("cfgMsg").textContent = j && j.errcode === 0 ? "✅ Test row added. Check the Smart Sheet, then delete the test row." : "❌ " + wecomErr(j || {});
+  } catch(e){ $("cfgMsg").textContent = "❌ " + (e.message || e); }
+});
+window.addEventListener("online", () => sendWaiting(false));
+setInterval(() => sendWaiting(false), 120000);
+setInterval(() => {
+  const s = $("pstat"), c = $("cpstat");
+  c.className = s.className.replace("pstat", "pstat"); $("cpstatText").textContent = $("pstatText").textContent;
+  c.querySelector("button").textContent = s.querySelector("button").textContent;
+}, 1500);
+(function initCount(){
+  const who = store.get("st_who", {}), dr = store.get("st_draft", {});
+  if (who.team) $("c_team").value = who.team;
+  if (who.counter) $("c_name").value = who.counter;
+  if (dr.loc) $("c_loc").value = dr.loc;
+  if (dr.unit) $("c_unit").value = dr.unit;
+  renderCfg(); renderCounts();
+  setTimeout(() => sendWaiting(false), 3000);
+})();
+
 /* ---------------- Language (English / 中文) ---------------- */
 const ZH = {
+  "Count":"盘点", "Count stock, print the count label and send it to WeCom":"盘点库存，打印盘点标签并发送到企业微信",
+  "WeCom Smart Sheet not connected":"未连接企业微信智能表格",
+  "WeCom Smart Sheet not connected. Counts are kept on this phone.":"未连接企业微信智能表格，盘点记录保存在本手机。",
+  "Sending counts to WeCom Smart Sheet":"盘点记录发送到企业微信智能表格",
+  "Counter":"盘点人", "Team":"小组", "Select":"请选择", "Counter name":"盘点人姓名", "Your name":"你的姓名",
+  "Scan the location label":"扫描库位标签", "Counted qty":"盘点数量", "Optional":"选填", "Notes":"备注",
+  "Optional, e.g. damaged box":"选填，例如：箱子破损", "Count label preview":"盘点标签预览",
+  "Counts on this phone":"本手机的盘点记录", "🔄 Send waiting":"🔄 发送未发记录", "📤 Export Excel":"📤 导出 Excel", "Clear sent":"清除已发送",
+  "Submitted counts show here with their tag number and sending status.":"提交的盘点记录会显示在这里，包括标签号和发送状态。",
+  "WeCom Smart Sheet connection":"企业微信智能表格连接",
+  "Each submitted count is added as a new row in your Smart Sheet. In the Smart Sheet, open the sheet menu → 接收外部数据 (Receive external data), turn it on, then copy the Webhook address and the sample data (示例数据) here.":"每次提交的盘点会在智能表格中新增一行。在智能表格中打开工作表菜单 → 接收外部数据，开启后把 Webhook 地址和示例数据复制到这里。",
+  "Webhook address":"Webhook 地址", "Sample data (示例数据), optional":"示例数据（选填）",
+  "Paste the sample JSON so the app can match the columns automatically":"粘贴示例数据 JSON，应用会自动匹配列",
+  "🔗 Match columns":"🔗 匹配列",
+  "Column for each value. The name must match the Smart Sheet column title exactly. Leave empty to not send that value.":"每个数据对应的列。名称必须与智能表格的列标题完全一致。留空则不发送该数据。",
+  "Ask for a photo after the label prints":"标签打印后提示拍照",
+  "Stick the label on the pallet, then take the photo. The photo is added to the same row.":"先把标签贴到托盘上，再拍照。照片会加到同一行。",
+  "Print the count label when I submit":"提交时打印盘点标签",
+  "💾 Save":"💾 保存", "🧪 Send a test row":"🧪 发送测试行",
+  "✅ Submit & print":"✅ 提交并打印", "✅ Submit":"✅ 提交",
+  "Choose your team and enter your name.":"请选择小组并填写姓名。", "Scan or type the location.":"请扫描或输入库位。",
+  "Enter the counted qty.":"请填写盘点数量。", "Qty should be a number (0 or more).":"数量应为数字（0 或以上）。",
+  "Fill in the required fields first.":"请先填写必填项。", "Nothing waiting to send.":"没有待发送的记录。",
+  "Set up the WeCom Smart Sheet connection first.":"请先设置企业微信智能表格连接。", "No counts to export.":"没有可导出的记录。",
+  "Sending test row…":"正在发送测试行…", "Paste the Webhook address first.":"请先粘贴 Webhook 地址。",
+  "✅ Test row added. Check the Smart Sheet, then delete the test row.":"✅ 测试行已添加。请检查智能表格，然后删除测试行。",
+  "✅ Saved.":"✅ 已保存。", "Saved. No Webhook address, so counts stay on this phone.":"已保存。没有 Webhook 地址，盘点记录保存在本手机。",
+  "This isn't valid JSON. Copy the whole sample data.":"不是有效的 JSON，请复制完整的示例数据。",
+  "No columns found in the sample data.":"示例数据中没有找到列。",
+  "✅ sent":"✅ 已发送", "⏳ waiting":"⏳ 待发送", "⏳ photo waiting":"⏳ 照片待发送", "💾 on phone":"💾 保存在手机",
+  "Text":"文本", "(not sent)":"（不发送）",
+  "Tag no.":"标签号", "License plate":"托盘号 (LP)", "Batch":"批次", "Count time":"盘点时间", "Photo":"照片", "Item":"物料",
   "Label":"标签", "Printer setup":"打印机设置", "Item list":"物料清单", "History":"打印记录", "Language":"语言",
   "Label Printer":"标签打印", "Fill in the fields, check the preview, then tap Print":"填写信息，检查预览，然后点击打印",
   "Connect the Zebra and choose the label size":"连接斑马打印机并选择标签尺寸",
@@ -1334,6 +2003,19 @@ const ZH = {
 };
 const ZH_FIELD = {"item code":"物料编码", "qty":"数量", "batch number":"批次号", "license plate":"托盘号", "location":"库位"};
 const ZH_RX = [
+  [/^Next tag (.*) · (\d+) × (\d+) mm$/, m => `下一个标签号 ${m[1]} · ${m[2]} × ${m[3]} mm`],
+  [/^(\d+) counts · (\d+) waiting$/, m => `${m[1]} 条 · ${m[2]} 条待发送`],
+  [/^⚠ Already counted today: (.*), qty (.*)\. Tap Submit again to add another count\.$/, m => `⚠ 今天已盘点过：${m[1]}，数量 ${m[2]}。再次点击提交可新增一条盘点。`],
+  [/^✅ (.*) saved\.(.*?) Stick the label, then take the photo\.$/, m => `✅ ${m[1]} 已保存。${m[2] ? m[2].replace(" Label not printed:", " 标签未打印：") : ""} 请贴好标签后拍照。`],
+  [/^✅ (.*) saved\.(.*)$/, m => `✅ ${m[1]} 已保存。${m[2] ? m[2].replace(" Label not printed:", " 标签未打印：") : ""}`],
+  [/^📷 Photo added to (.*)$/, m => `📷 照片已添加到 ${m[1]}`],
+  [/^🖨 Reprinted (.*)$/, m => `🖨 已重新打印 ${m[1]}`],
+  [/^✅ Sent (\d+) to WeCom$/, m => `✅ 已发送 ${m[1]} 条到企业微信`],
+  [/^Sent (\d+), (\d+) still waiting: (.*)$/, m => `已发送 ${m[1]} 条，${m[2]} 条待发送：${m[3]}`],
+  [/^Removed (\d+) sent counts from this phone\.$/, m => `已从本手机清除 ${m[1]} 条已发送记录。`],
+  [/^📤 Saved (.*) to (.*)$/, m => `📤 已保存 ${m[1]} 到 ${m[2]}`],
+  [/^Matched (\d+) of (\d+) columns\. Check them below, then Save\.$/, m => `已匹配 ${m[1]} / ${m[2]} 列。请检查后点击保存。`],
+  [/^· not printed$/, () => "· 未打印"],
   [/^✅ Printer selected: (.*)$/, m => `✅ 已选择打印机：${m[1]}`],
   [/^Version (.*)$/, m => `版本 ${m[1]}`],
   [/^([\d,]+) items loaded \((.*)\)\.?(.*)$/, m => `已加载 ${m[1]} 个物料（${m[2]}）。${m[3] ? " " + m[3] : ""}`],
@@ -1422,7 +2104,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.0.3";
+const APP_VERSION = "1.1.0";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
@@ -1512,6 +2194,7 @@ if (!$("date").value) $("date").value = today();
 renderHist();
 render();
 setLang(LANG);
+if (store.get("lbl_tab", "label") === "count") showTab("count");
 </script>
 </body>
 </html>

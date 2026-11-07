@@ -27,7 +27,17 @@ import android.webkit.WebViewClient;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import android.content.ContentValues;
+import android.os.Environment;
+import android.provider.MediaStore;
+import android.util.Base64;
+
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -239,6 +249,74 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return "{\"ok\":false,\"error\":" + JSONObject.quote(String.valueOf(e.getMessage())) + "}";
             }
+        }
+
+        /** POST JSON to the WeCom Smart Sheet webhook (only that address is allowed). Callback gets the response body. */
+        @JavascriptInterface
+        public void httpPost(final String url, final String body, final String callback) {
+            new Thread(() -> {
+                HttpURLConnection con = null;
+                try {
+                    if (url == null || !url.startsWith("https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook")) {
+                        throw new IOException("Only the WeCom Smart Sheet webhook address is allowed");
+                    }
+                    con = (HttpURLConnection) new URL(url).openConnection();
+                    con.setRequestMethod("POST");
+                    con.setConnectTimeout(15000);
+                    con.setReadTimeout(30000);
+                    con.setDoOutput(true);
+                    con.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                    byte[] out = body.getBytes(StandardCharsets.UTF_8);
+                    con.setFixedLengthStreamingMode(out.length);
+                    try (OutputStream os = con.getOutputStream()) { os.write(out); }
+                    int code = con.getResponseCode();
+                    InputStream in = code >= 400 ? con.getErrorStream() : con.getInputStream();
+                    ByteArrayOutputStream buf = new ByteArrayOutputStream();
+                    if (in != null) {
+                        byte[] b = new byte[8192]; int n;
+                        while ((n = in.read(b)) > 0) buf.write(b, 0, n);
+                        in.close();
+                    }
+                    String text = buf.toString("UTF-8");
+                    if (code >= 400 && text.isEmpty()) throw new IOException("HTTP " + code);
+                    callJs(callback, true, text);
+                } catch (java.net.UnknownHostException e) {
+                    callJs(callback, false, "No internet");
+                } catch (Exception e) {
+                    callJs(callback, false, String.valueOf(e.getMessage()));
+                } finally {
+                    if (con != null) con.disconnect();
+                }
+            }).start();
+        }
+
+        /** Save a file (base64) to Downloads. Callback message is where it was saved. */
+        @JavascriptInterface
+        public void saveFile(final String name, final String base64, final String mime, final String callback) {
+            new Thread(() -> {
+                try {
+                    byte[] data = Base64.decode(base64, Base64.DEFAULT);
+                    String safe = name.replaceAll("[^A-Za-z0-9._-]", "_");
+                    if (Build.VERSION.SDK_INT >= 29) {
+                        ContentValues v = new ContentValues();
+                        v.put(MediaStore.Downloads.DISPLAY_NAME, safe);
+                        v.put(MediaStore.Downloads.MIME_TYPE, mime);
+                        v.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                        Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                        if (uri == null) throw new IOException("Couldn't create the file");
+                        try (OutputStream os = getContentResolver().openOutputStream(uri)) { os.write(data); }
+                        callJs(callback, true, "Downloads");
+                    } else {
+                        File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+                        if (dir == null) dir = getFilesDir();
+                        File f = new File(dir, safe);
+                        try (FileOutputStream os = new FileOutputStream(f)) { os.write(data); }
+                        callJs(callback, true, f.getAbsolutePath());
+                    }
+                } catch (Exception e) {
+                    callJs(callback, false, String.valueOf(e.getMessage()));
+                }
+            }).start();
         }
 
         /** Send raw printer commands (ZPL) to the printer with this Bluetooth address. */
