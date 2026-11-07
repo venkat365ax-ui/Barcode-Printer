@@ -118,6 +118,15 @@
   .toast button{background:#fff;color:#101828;border:0;border-radius:8px;padding:6px 10px;font-weight:700}
   .req{color:#d92d20}
   #printArea{display:none}
+  .pp-ov{position:fixed;inset:0;background:rgba(16,24,40,.55);z-index:80;display:flex;align-items:flex-end;justify-content:center}
+  .pp-box{background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:20px 18px 22px;text-align:center}
+  .pp-ok{font-size:34px}
+  .pp-tag{font-size:22px;font-weight:800;margin:4px 0 2px;letter-spacing:.02em}
+  .pp-sub{color:var(--muted);margin-bottom:12px}
+  .pp-step{font-size:16px;margin:6px 0;text-align:left}
+  .pp-warn{background:#fef3f2;border:1px solid #fecdca;color:#b42318;border-radius:9px;padding:9px 10px;margin:6px 0;text-align:left;font-size:14px}
+  .pp-btn{width:100%;padding:16px;font-size:18px;font-weight:700;border-radius:12px;margin-top:12px;background:var(--brand);color:#fff;border:0}
+  .pp-btn2{width:100%;padding:13px;font-size:16px;border-radius:12px;margin-top:8px;background:#fff;border:1px solid var(--line)}
   .sstat{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:14px;font-size:13px}
   .sstat .dot{width:9px;height:9px;border-radius:50%;background:#f79009;flex:0 0 auto}
   .sstat.ok .dot{background:#12b76a}
@@ -1821,7 +1830,7 @@ async function submitCount(){
   countRender(); await renderCounts();
   sendWaiting(false).then(renderCounts);
   if (CFG.photo !== false){
-    showToast(`✅ ${rec.tag} saved.${printMsg} Stick the label, then take the photo.`, "📷 Photo", () => takePhotoFor(rec.tag));
+    showPhotoPrompt(rec, printMsg);
   } else {
     showToast(`✅ ${rec.tag} saved.${printMsg}`, printMsg ? "Reprint" : null, printMsg ? () => reprintCount(rec.tag) : null);
     $("c_item").focus();
@@ -1829,6 +1838,27 @@ async function submitCount(){
 }
 
 /* ---- photo ---- */
+function showPhotoPrompt(rec, printMsg){
+  document.querySelectorAll(".toast").forEach(t => t.remove());
+  const old = $("photoPrompt"); if (old) old.remove();
+  const ov = document.createElement("div"); ov.id = "photoPrompt"; ov.className = "pp-ov";
+  ov.innerHTML = `<div class="pp-box">
+    <div class="pp-ok">✅</div>
+    <div class="pp-tag">${esc(rec.tag)}</div>
+    <div class="pp-sub"><span>${esc(rec.item)}</span> · <b>${esc(rec.qty)}</b> ${esc(rec.unit || "")}</div>
+    ${printMsg ? `<div class="pp-warn"><span>Label not printed.</span> <span>${esc(printMsg.replace(/^ Label not printed: /, ""))}</span></div>` : `<div class="pp-step">1. <span>Stick the label on the pallet</span></div>`}
+    <div class="pp-step">${printMsg ? "" : "2. "}<span>Take a photo of the label with the pallet</span></div>
+    <button type="button" class="primary pp-btn" id="ppTake">📷 Take photo</button>
+    ${printMsg ? `<button type="button" class="pp-btn2" id="ppReprint">🖨 Reprint</button>` : ""}
+    <button type="button" class="pp-btn2" id="ppSkip">Skip photo</button>
+  </div>`;
+  document.body.appendChild(ov);
+  if (LANG === "zh") trTree(ov);
+  const close = () => ov.remove();
+  $("ppTake").onclick = () => { close(); takePhotoFor(rec.tag); };
+  $("ppSkip").onclick = () => { close(); showToast(`${rec.tag}: no photo. You can add it later from the list.`); $("c_item").focus(); };
+  if ($("ppReprint")) $("ppReprint").onclick = async () => { await reprintCount(rec.tag); const r = (await CDB.all()).find(x => x.tag === rec.tag); if (r && r.printed){ close(); showPhotoPrompt(r, ""); } };
+}
 let photoFor = null;
 function takePhotoFor(tag){ photoFor = tag; $("c_photoInput").value = ""; $("c_photoInput").click(); }
 function shrinkPhoto(file){
@@ -2010,6 +2040,8 @@ setInterval(() => {
 
 /* ---------------- Language (English / 中文) ---------------- */
 const ZH = {
+  "📷 Take photo":"📷 拍照", "Skip photo":"跳过拍照", "🖨 Reprint":"🖨 重新打印", "Label not printed.":"标签未打印。",
+  "Stick the label on the pallet":"把标签贴到托盘上", "Take a photo of the label with the pallet":"拍一张标签和托盘的照片",
   "Count settings":"盘点设置", "WeCom connection and count options (admin only)":"企业微信连接和盘点选项（仅管理员）",
   "Admin PIN":"管理员密码", "New admin PIN":"新的管理员密码", "Enter the PIN again":"再次输入密码", "4–8 digits":"4–8 位数字",
   "🔓 Open settings":"🔓 打开设置", "💾 Save PIN":"💾 保存密码", "🔑 Change PIN":"🔑 修改密码", "🔒 Lock settings":"🔒 锁定设置",
@@ -2106,6 +2138,7 @@ const ZH = {
 };
 const ZH_FIELD = {"item code":"物料编码", "qty":"数量", "batch number":"批次号", "license plate":"托盘号", "location":"库位"};
 const ZH_RX = [
+  [/^(.*): no photo\. You can add it later from the list\.$/, m => `${m[1]}：未拍照。可以稍后在列表中补拍。`],
   [/^(.*) · nearby \(Bluetooth LE\)$/, m => `${m[1]} · 附近（低功耗蓝牙）`],
   [/^(.*) · paired$/, m => `${m[1]} · 已配对`],
   [/^Nearby search failed: (.*)\. Showing paired devices only\.$/, m => `附近搜索失败：${m[1]}。仅显示已配对设备。`],
@@ -2210,7 +2243,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.2.1";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
