@@ -493,6 +493,7 @@
       <button type="button" class="small-btn" id="cfgTest">🧪 Send a test row</button>
     </div>
     <div class="muted" id="cfgMsg" style="margin-top:8px"></div>
+    <div class="muted" id="cfgPhotoMsg" style="margin-top:4px"></div>
   </div>
   <div class="card">
     <h2>Admin PIN</h2>
@@ -1583,7 +1584,8 @@ function readCfg(){
   CFG.url = $("cfgUrl").value.trim();
   CFG.photo = $("cfgPhoto").checked; CFG.print = $("cfgPrint").checked;
   MAP_KEYS.forEach(([k]) => {
-    const v = document.querySelector(`[data-mk="${k}"]`).value.trim();
+    let v = document.querySelector(`[data-mk="${k}"]`).value.replace(/[\s\u3000]+/g, " ").trim();
+    if (k === "photo") v = v.replace(/\s+/g, "");
     CFG.map[k] = {field: idByTitle[v] || v, type: document.querySelector(`[data-mt="${k}"]`).value};
   });
   store.set("st_cfg", CFG);
@@ -1694,11 +1696,12 @@ async function sendOne(rec){
   if (rec.photo && !rec.photoSent && photoFieldOk()){
     if (!rec.recordId) throw new Error("WeCom did not return the row ID, so the photo can't be added");
     const j = await httpPostJson(CFG.url, {update_records: [{record_id: rec.recordId, values: recordValues(rec, true)}]});
-    if (!j || j.errcode !== 0){ rec.photoErr = "Photo: " + wecomErr(j || {}); rec.photoSent = "failed"; await CDB.put(rec); return; }
+    if (!j || j.errcode !== 0){ rec.photoErr = "Photo: " + wecomErr(j || {}); rec.photoSent = "failed"; await CDB.put(rec); throw new Error(rec.photoErr); }
     rec.photoSent = true; rec.photoErr = ""; await CDB.put(rec);
   }
 }
 async function sendWaiting(manual){
+  if (manual){ for (const r of await CDB.all()) if (r.photoSent === "failed"){ r.photoSent = false; await CDB.put(r); } }
   if (sending) return;
   if (!cfgOk()){ if (manual) showToast("Set up the WeCom Smart Sheet connection first."); return; }
   sending = true;
@@ -1900,14 +1903,14 @@ async function reprintCount(tag){
 }
 async function renderCounts(){
   const all = await CDB.all();
-  const waiting = all.filter(r => !r.sent).length;
+  const waiting = all.filter(r => !r.sent || (r.photo && !r.photoSent && photoFieldOk())).length;
   const photos = all.filter(r => r.photo).length, newPhotos = all.filter(r => r.photo && !r.photoExported).length;
   $("cPhotos").disabled = !photos;
   $("cPhotos").textContent = newPhotos ? `🖼 Export photos (${newPhotos} new)` : "🖼 Export photos";
   $("cSummary").textContent = all.length ? `${all.length} counts · ${waiting} waiting` : "";
   $("cEmpty").style.display = all.length ? "none" : "block";
   $("cRetry").disabled = !waiting;
-  const st = r => r.sent ? "✅ sent" : cfgOk() ? "⏳ waiting" : "💾 on phone";
+  const st = r => r.sent ? (r.photo && !r.photoSent && photoFieldOk() ? "⏳ photo waiting" : "✅ sent") : cfgOk() ? "⏳ waiting" : "💾 on phone";
   $("cList").innerHTML = all.slice(0, 200).map(r => `<li><span><b>${esc(r.tag)}</b> · ${esc(r.item)} · <b>${esc(r.qty)}</b> ${esc(r.unit || "")}<br>
     <span class="muted">${esc(r.loc)}${r.lp ? " · LP " + esc(r.lp) : ""}${r.batch ? " · " + esc(r.batch) : ""} · ${esc(fmtTime(r.time).slice(5))}</span><br>
     <span class="cst"><span>${st(r)}</span> ${r.printed ? "· 🖨" : `<span>· not printed</span>`}${r.photo ? " · 📷" + (r.photoSent === true ? " → WeCom" : r.photoExported ? " ✓" : "") : ""}</span>${r.photoErr ? `<br><span class="cerr">${esc(r.photoErr)}</span>` : ""}${r.err ? `<br><span class="cerr">${esc(r.err)}</span>` : ""}</span>
@@ -2061,7 +2064,10 @@ $("lockBtn").addEventListener("click", async () => {
 ["lockPin","lockPin2"].forEach(id => $(id).addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); $("lockBtn").click(); } }));
 $("lockNow").addEventListener("click", () => { unlocked = false; lockRender(); });
 $("pinChange").addEventListener("click", () => { unlocked = false; pinMode = "change"; lockRender(); });
-$("cfgSave").addEventListener("click", () => { readCfg(); updateSheetStatus(); renderCounts(); $("cfgMsg").textContent = cfgOk() ? "✅ Saved." : CFG.url ? "⚠ Saved, but the Webhook address doesn't look right. It should start with https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=" : "Saved. No Webhook address, so counts stay on this phone."; });
+$("cfgSave").addEventListener("click", () => { readCfg(); updateSheetStatus(); renderCounts(); setTimeout(() => sendWaiting(false).then(renderCounts), 300);
+  const pf = (CFG.map.photo || {}).field || "";
+  $("cfgPhotoMsg").textContent = !pf ? "Photo: no field ID, so photos are not sent to WeCom (use Export photos)." : photoFieldOk() ? "✅ Photo field ID " + pf + " saved. Photos will be sent to WeCom." : "⚠ Photo field ID \"" + pf + "\" doesn't look right. It should look like fMqQT1.";
+  $("cfgMsg").textContent = cfgOk() ? "✅ Saved." : CFG.url ? "⚠ Saved, but the Webhook address doesn't look right. It should start with https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=" : "Saved. No Webhook address, so counts stay on this phone."; });
 $("cfgMatch").addEventListener("click", matchSample);
 $("cfgTest").addEventListener("click", async () => {
   readCfg(); updateSheetStatus();
@@ -2093,6 +2099,7 @@ setInterval(() => {
 
 /* ---------------- Language (English / 中文) ---------------- */
 const ZH = {
+  "Photo: no field ID, so photos are not sent to WeCom (use Export photos).":"照片：未填写字段 ID，照片不会发送到企业微信（请使用“导出照片”）。",
   "🖼 Export photos":"🖼 导出照片", "No photos to export.":"没有可导出的照片。",
   "📷 Take photo":"📷 拍照", "Skip photo":"跳过拍照", "🖨 Reprint":"🖨 重新打印", "Label not printed.":"标签未打印。",
   "Stick the label on the pallet":"把标签贴到托盘上", "Take a photo of the label with the pallet":"拍一张标签和托盘的照片",
@@ -2192,6 +2199,7 @@ const ZH = {
 };
 const ZH_FIELD = {"item code":"物料编码", "qty":"数量", "batch number":"批次号", "license plate":"托盘号", "location":"库位"};
 const ZH_RX = [
+  [/^✅ Photo field ID (.*) saved\. Photos will be sent to WeCom\.$/, m => `✅ 照片字段 ID ${m[1]} 已保存。照片将发送到企业微信。`],
   [/^🖼 Export photos \((\d+) new\)$/, m => `🖼 导出照片（${m[1]} 张新）`],
   [/^🖼 Saved (\d+) photos as (.*) in (.*)$/, m => `🖼 已保存 ${m[1]} 张照片：${m[2]}，位置 ${m[3]}`],
   [/^Removed (\d+) sent counts from this phone\. Kept (\d+) with photos not exported yet\.$/, m => `已从本手机清除 ${m[1]} 条已发送记录。保留 ${m[2]} 条照片未导出的记录。`],
@@ -2300,7 +2308,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.2.3";
+const APP_VERSION = "1.2.4";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
