@@ -493,6 +493,13 @@
       <button type="button" class="small-btn" id="cfgTest">🧪 Send a test row</button>
     </div>
     <div class="muted" id="cfgMsg" style="margin-top:8px"></div>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+      <label for="cfgLink" style="font-weight:600;font-size:14px">Test photo link</label>
+      <div class="muted" style="margin:4px 0 6px">Sends 2 test rows with this photo link (two link formats). If a photo appears in the Photo column, WeCom accepts photo links.</div>
+      <input type="text" id="cfgLink" autocomplete="off" spellcheck="false" value="https://wdcdn.qpic.cn/MTY4ODg1NzUyNTQyNDA5MA_397712_y_ev28nexiSz1lIQ_1794032893?w=1557&amp;h=997">
+      <button type="button" class="small-btn" id="cfgLinkTest" style="margin-top:8px">🧪 Test photo link</button>
+      <div class="muted" id="cfgLinkMsg" style="margin-top:6px;white-space:pre-line"></div>
+    </div>
     <div class="muted" id="cfgPhotoMsg" style="margin-top:4px"></div>
   </div>
   <div class="card">
@@ -2096,6 +2103,25 @@ $("cfgTest").addEventListener("click", async () => {
     $("cfgMsg").textContent = j && j.errcode === 0 ? "✅ Test row added. Check the Smart Sheet, then delete the test row." : "❌ " + wecomErr(j || {});
   } catch(e){ $("cfgMsg").textContent = "❌ " + (e.message || e); }
 });
+$("cfgLinkTest").addEventListener("click", async () => {
+  readCfg();
+  const link = $("cfgLink").value.trim(), pf = (CFG.map.photo || {}).field || "";
+  if (!cfgOk()){ $("cfgLinkMsg").textContent = "Paste the Webhook address first."; return; }
+  if (!/^f[A-Za-z0-9]{3,12}$/.test(pf)){ $("cfgLinkMsg").textContent = "Enter the Photo field ID (fMqQT1) above and Save first."; return; }
+  if (!/^https:\/\//.test(link)){ $("cfgLinkMsg").textContent = "Paste a link starting with https://"; return; }
+  $("cfgLinkMsg").textContent = "Sending…";
+  const lines = [];
+  for (const key of ["imageUrl", "image_url"]){
+    const rec = {tag: "TEST-LINK-" + key, team: $("c_team").value || "T01", loc: "TEST", item: "TEST-PHOTO-LINK", qty: "0", counter: "test", time: Date.now(), notes: "Photo link test (" + key + "), delete this row"};
+    const values = recordValues(rec, false);
+    values[pf] = [{title: "test-photo-link.jpg", [key]: link}];
+    try {
+      const j = await httpPostJson(CFG.url, {add_records: [{values}]});
+      lines.push(`${key}: ` + (j && j.errcode === 0 ? "✅ row added, check the Photo column of row TEST-LINK-" + key : "❌ " + wecomErr(j || {})));
+    } catch(e){ lines.push(`${key}: ❌ ` + (e.message || e)); }
+  }
+  $("cfgLinkMsg").textContent = lines.join("\n");
+});
 window.addEventListener("online", () => sendWaiting(false));
 setInterval(() => sendWaiting(false), 120000);
 setInterval(() => {
@@ -2325,7 +2351,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.2.5";
+const APP_VERSION = "1.2.6";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
