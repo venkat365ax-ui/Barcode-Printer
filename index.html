@@ -488,6 +488,12 @@
     <div class="field">
       <label><span><input type="checkbox" id="cfgPrint" checked> Print the count label when I submit</span></label>
     </div>
+    <div class="field" style="border-top:1px solid var(--line);padding-top:12px">
+      <label for="cfgForm">WeCom photo form link</label>
+      <input type="text" id="cfgForm" autocomplete="off" spellcheck="false" placeholder="https://doc.weixin.qq.com/forms/… (照片收集表 → Share → copy link)">
+      <label style="margin-top:8px"><span><input type="checkbox" id="cfgOpenForm" checked> After printing, open the WeCom photo form</span></label>
+      <div class="muted">The counter sticks the label, scans its barcode in the form and takes the photo there. The photo then shows in the Smart Sheet row with the same tag number.</div>
+    </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button type="button" class="small-btn" id="cfgSave">💾 Save</button>
       <button type="button" class="small-btn" id="cfgTest">🧪 Send a test row</button>
@@ -1576,6 +1582,7 @@ let SAMPLE_TITLES = store.get("st_titles", {});   // field id -> title, from pas
 function renderCfg(){
   $("cfgUrl").value = CFG.url || "";
   $("cfgPhoto").checked = CFG.photo !== false; $("cfgPrint").checked = CFG.print !== false;
+  $("cfgForm").value = CFG.formUrl || ""; $("cfgOpenForm").checked = CFG.openForm !== false;
   const titles = Object.entries(SAMPLE_TITLES);
   $("cfgMap").innerHTML = MAP_KEYS.map(([k, label]) => {
     const m = CFG.map[k] || {field: "", type: "text"};
@@ -1590,6 +1597,7 @@ function readCfg(){
   const idByTitle = {}; Object.entries(SAMPLE_TITLES).forEach(([id, t]) => idByTitle[t] = id);
   CFG.url = $("cfgUrl").value.trim();
   CFG.photo = $("cfgPhoto").checked; CFG.print = $("cfgPrint").checked;
+  CFG.formUrl = $("cfgForm").value.trim(); CFG.openForm = $("cfgOpenForm").checked;
   MAP_KEYS.forEach(([k]) => {
     let v = document.querySelector(`[data-mk="${k}"]`).value.replace(/[\s\u3000]+/g, " ").trim();
     if (k === "photo") v = v.replace(/\s+/g, "");
@@ -1845,7 +1853,7 @@ async function submitCount(){
   const now = Date.now(), t = nextTag(c.team, now);
   const rec = {tag: t.tag, time: now, team: c.team, counter: c.counter, loc: c.loc.toUpperCase(), item: c.item, name: c.name, qty: c.qty, unit: c.unit.toUpperCase(),
                lp: c.lp.toUpperCase(), batch: c.batch.toUpperCase(), notes: c.notes, sent: false, photo: null, photoSent: false, printed: false, err: "",
-               hold: CFG.photo !== false && photoFieldOk()};
+               hold: !formOn() && CFG.photo !== false && photoFieldOk()};
   useTag(t.key, t.n);
   await CDB.put(rec);
   let printMsg = "";
@@ -1858,12 +1866,47 @@ async function submitCount(){
   submitting = false; $("countBtn").disabled = false;
   countRender(); await renderCounts();
   sendWaiting(false).then(renderCounts);
-  if (CFG.photo !== false){
+  if (formOn()){
+    showFormPrompt(rec, printMsg);
+  } else if (CFG.photo !== false){
     showPhotoPrompt(rec, printMsg);
   } else {
     showToast(`✅ ${rec.tag} saved.${printMsg}`, printMsg ? "Reprint" : null, printMsg ? () => reprintCount(rec.tag) : null);
     $("c_item").focus();
   }
+}
+
+/* ---- WeCom photo form ---- */
+function formOn(){ return CFG.openForm !== false && /^https:\/\//.test(CFG.formUrl || ""); }
+async function openPhotoForm(){
+  const url = CFG.formUrl;
+  if (NATIVE && window.AndroidPrinter && AndroidPrinter.openLink){
+    const r = await nativeCall(cb => AndroidPrinter.openLink(url, cb));
+    if (!r.ok) showToast("Couldn't open the photo form: " + (r.msg || ""));
+    return;
+  }
+  window.open(url, "_blank");
+}
+function showFormPrompt(rec, printMsg){
+  document.querySelectorAll(".toast").forEach(t => t.remove());
+  const old = $("photoPrompt"); if (old) old.remove();
+  const ov = document.createElement("div"); ov.id = "photoPrompt"; ov.className = "pp-ov";
+  ov.innerHTML = `<div class="pp-box">
+    <div class="pp-ok">✅</div>
+    <div class="pp-tag">${esc(rec.tag)}</div>
+    <div class="pp-sub"><span>${esc(rec.item)}</span> · <b>${esc(rec.qty)}</b> ${esc(rec.unit || "")}</div>
+    ${printMsg ? `<div class="pp-warn"><span>Label not printed.</span> <span>${esc(printMsg.replace(/^ Label not printed: /, ""))}</span></div>` : `<div class="pp-step">1. <span>Stick the label on the pallet</span></div>`}
+    <div class="pp-step">${printMsg ? "" : "2. "}<span>In the WeCom form, scan the label barcode and take the photo</span></div>
+    <button type="button" class="pp-btn" id="ppForm">📷 Open WeCom photo form</button>
+    ${printMsg ? `<button type="button" class="pp-btn2" id="ppReprint">🖨 Reprint</button>` : ""}
+    <button type="button" class="pp-btn2" id="ppNext">Next count</button>
+  </div>`;
+  document.body.appendChild(ov);
+  if (LANG === "zh") trTree(ov);
+  const close = () => ov.remove();
+  $("ppForm").onclick = () => { close(); openPhotoForm(); $("c_item").focus(); };
+  $("ppNext").onclick = () => { close(); $("c_item").focus(); };
+  if ($("ppReprint")) $("ppReprint").onclick = async () => { await reprintCount(rec.tag); const r = (await CDB.all()).find(x => x.tag === rec.tag); if (r && r.printed){ close(); showFormPrompt(r, ""); } };
 }
 
 /* ---- photo ---- */
@@ -2142,6 +2185,10 @@ setInterval(() => {
 
 /* ---------------- Language (English / 中文) ---------------- */
 const ZH = {
+  "WeCom photo form link":"企业微信照片收集表链接", "After printing, open the WeCom photo form":"打印后打开企业微信照片收集表",
+  "The counter sticks the label, scans its barcode in the form and takes the photo there. The photo then shows in the Smart Sheet row with the same tag number.":"盘点人贴好标签后，在收集表中扫描标签条码并拍照。照片会显示在智能表格中标签号相同的那一行。",
+  "📷 Open WeCom photo form":"📷 打开企业微信照片收集表", "Next count":"下一条盘点",
+  "In the WeCom form, scan the label barcode and take the photo":"在企业微信收集表中扫描标签条码并拍照",
   "Photo: no field ID, so photos are not sent to WeCom (use Export photos).":"照片：未填写字段 ID，照片不会发送到企业微信（请使用“导出照片”）。",
   "🖼 Export photos":"🖼 导出照片", "No photos to export.":"没有可导出的照片。",
   "📷 Take photo":"📷 拍照", "Skip photo":"跳过拍照", "🖨 Reprint":"🖨 重新打印", "Label not printed.":"标签未打印。",
@@ -2351,7 +2398,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.2.6";
+const APP_VERSION = "1.3.0";
 $("appVer").textContent = "Version " + APP_VERSION;
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;

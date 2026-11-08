@@ -1,5 +1,5 @@
 /* StockTag service worker: works offline, updates in the background. */
-const VERSION = "lp-1.2.6";
+const VERSION = "lp-1.3.0";
 const CORE = [
   "./",
   "./index.html",

@@ -548,6 +548,30 @@ public class MainActivity extends Activity {
             }).start();
         }
 
+        /** Open a link, preferring the WeCom app (com.tencent.wework). Callback message: "wecom" or "other". */
+        @JavascriptInterface
+        public void openLink(final String url, final String callback) {
+            ui.post(() -> {
+                Uri u = Uri.parse(url);
+                try {
+                    Intent i = new Intent(Intent.ACTION_VIEW, u);
+                    i.setPackage("com.tencent.wework");
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(i);
+                    callJs(callback, true, "wecom");
+                    return;
+                } catch (Exception ignored) { }
+                try {
+                    Intent i = new Intent(Intent.ACTION_VIEW, u);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(i);
+                    callJs(callback, true, "other");
+                } catch (Exception e) {
+                    callJs(callback, false, String.valueOf(e.getMessage()));
+                }
+            });
+        }
+
         /** POST JSON to the WeCom Smart Sheet webhook (only that address is allowed). Callback gets the response body. */
         @JavascriptInterface
         public void httpPost(final String url, final String body, final String callback) {
