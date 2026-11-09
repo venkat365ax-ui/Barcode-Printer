@@ -525,6 +525,15 @@
     <div class="field">
       <label><span><input type="checkbox" id="cfgPrint" checked> Print the count label when I submit</span></label>
     </div>
+    <div class="field">
+      <label for="cfgQr">QR code on the count label</label>
+      <select id="cfgQr">
+        <option value="qronly">Tag number as QR only, no barcode (one code, recommended)</option>
+        <option value="tag">Tag number (same as the barcode, safest for the WeCom photo form)</option>
+        <option value="item">Item code (the WeCom form may scan it by mistake)</option>
+        <option value="none">No QR code</option>
+      </select>
+    </div>
     <div class="field" style="border-top:1px solid var(--line);padding-top:12px">
       <label>System stock (D365 on-hand)</label>
       <label style="margin:4px 0 8px"><span><input type="checkbox" id="cfgSysFile"> Take System qty from the on-hand file (stock freeze). Counters then don't enter it.</span></label>
@@ -1529,17 +1538,18 @@ function dayKey(ms){ const d = new Date(ms); return pad(d.getMonth()+1,2) + pad(
 
 /* ---- count label layout (used by preview, phone print and ZPL through layout()) ---- */
 function countLayout(d){
+  // Layout: tag barcode at the very top (full width), QR at the bottom-right corner,
+  // so the two codes are as far apart as possible and the barcode is easy to scan alone.
   const dpmm = +$("dpi").value || 8;
   const [wmm, hmm] = SIZES[$("size").value];
   const W = Math.round(wmm*dpmm), H = Math.round(hmm*dpmm);
   const M = Math.round(2.0*dpmm), cw = W - 2*M;
-  const base = 43.5;                                     // mm of content at scale 1
-  const f = Math.max(0.6, Math.min(1.15, (hmm - 4) / base));   // width is fixed, so text grows only a little
+  const f = Math.max(0.6, Math.min(1.15, (hmm - 4) / 44));
   const mm = v => Math.round(v*dpmm*f);
   const it = [];
   const txt = (s, x, y, h, w, bold, align) => { if (!s) return; const hh = fitH(s, h, w, bold); it.push({k:"text", x, y: y + (h - hh), h:hh, w, s, bold, align}); };
   const line = y => it.push({k:"line", x:M, y, w:cw});
-  const titled = (title, val, x, y, w, vh) => {         // "TITLE  value" on one line
+  const titled = (title, val, x, y, w, vh) => {
     const S = Math.min(mm(2.5), vh);
     const tw = textW(title, S, true);
     it.push({k:"text", x, y: y + Math.round((vh - S)*0.78), h:S, w:tw + 2, s:title, bold:true});
@@ -1547,41 +1557,43 @@ function countLayout(d){
     txt(val || "", x + off, y, vh, w - off, true);
   };
   let y = M;
-  // header
-  const hh = mm(5.2), sh = mm(2.5);
+  const qmode = (typeof CFG !== "undefined" && CFG.qrMode) || "qronly";
+  const qrOnly = qmode === "qronly";
+  // 1. tag barcode, full width (not in QR-only mode)
+  const bh = qrOnly ? 0 : mm(9);
+  if (!qrOnly && d.tag && validB(d.tag)){
+    const mw = Math.max(1, Math.min(4, Math.floor(cw / (bcModules(d.tag) + 10))));
+    it.push({k:"bar", x:M, y, h:bh, mw, v:d.tag});
+  }
+  if (!qrOnly) y += bh + mm(0.6);
+  titled("标签 TAG", d.tag, M, y, cw, mm(qrOnly ? 4.2 : 3.4)); y += mm(qrOnly ? 4.2 : 3.4) + mm(0.6); line(y); y += mm(1.0);
+  // 2. header: COUNTED + team/time/counter
+  const hh = mm(4.4), sh = mm(2.2);
   const rightTop = [d.team, d.time ? fmtTime(d.time).slice(5) : ""].filter(Boolean).join("  ");
   const rw = Math.max(textW(rightTop, sh, true), textW(d.counter || "", sh, true)) + 4;
   txt("已盘点 COUNTED", M, y, hh, cw - rw - mm(2), true);
   it.push({k:"text", x:M + cw - rw, y, h:sh, w:rw, s:rightTop, bold:true, align:"R"});
-  if (d.counter){ const ch = fitH(d.counter, sh, rw, true); it.push({k:"text", x:M + cw - rw, y: y + sh + mm(0.3), h:ch, w:rw, s:d.counter, bold:true, align:"R"}); }
+  if (d.counter){ const ch = fitH(d.counter, sh, rw, true); it.push({k:"text", x:M + cw - rw, y: y + sh + mm(0.2), h:ch, w:rw, s:d.counter, bold:true, align:"R"}); }
   y += hh + mm(0.6); line(y); y += mm(1.0);
-  // tag + barcode
-  titled("标签 TAG", d.tag, M, y, cw, mm(3.6)); y += mm(3.6) + mm(0.5);
-  const bh = mm(6.5);
-  if (d.tag && validB(d.tag)){
-    const mw = Math.max(1, Math.min(3, Math.floor(cw / (bcModules(d.tag) + 10))));
-    it.push({k:"bar", x:M, y, h:bh, mw, v:d.tag});
-  }
-  y += bh + mm(0.6); line(y); y += mm(1.0);
-  // item
-  titled("物料 ITEM", d.item, M, y, cw, mm(4.6)); y += mm(4.6);
+  // 3. item
+  titled("物料 ITEM", d.item, M, y, cw, mm(4.4)); y += mm(4.4);
   if (d.name && hmm >= 70){ y += mm(0.5); txt(d.name, M, y, mm(2.8), cw, false); y += mm(2.8); }
   y += mm(0.6); line(y); y += mm(1.0);
-  // lower block: details left, QR right
+  // 4. details left, QR bottom-right
   const lowTop = y, avail = H - M - lowTop;
-  const qrData = d.item || "";   // QR holds only the item code (the tag barcode above holds the tag)
-  const qm = qrMatrix(qrData);
+  const qrData = qmode === "none" ? "" : qmode === "item" ? (d.item || "") : (d.tag || "");
+  const qm = qrData ? qrMatrix(qrData) : null;
   let mag = 2, qs = 0;
-  if (qm){ const n = qm.length; mag = Math.max(2, Math.floor(Math.min(avail, mm(21)) / n)); qs = n*mag; }
-  const gap = Math.round(2*dpmm), leftW = cw - qs - gap;
-  const rowsH = [mm(5.6), mm(3.4), mm(3.4), mm(3.4)];
+  if (qm){ const n = qm.length; mag = Math.max(2, Math.floor(Math.min(avail, mm(qrOnly ? 24 : 16)) / n)); qs = n*mag; }
+  const gap = Math.round(2*dpmm), leftW = cw - (qs ? qs + gap : 0);
+  const rowsH = [mm(5.2), mm(3.2), mm(3.2), mm(3.2)];
   const rg = Math.max(2, Math.floor((avail - rowsH.reduce((a, b) => a + b, 0)) / 3));
   let ly = lowTop;
   titled("数量 QTY", d.qty ? d.qty + (d.unit ? " " + d.unit : "") : "", M, ly, leftW, rowsH[0]); ly += rowsH[0] + rg;
   titled("库位 LOC", d.loc, M, ly, leftW, rowsH[1]); ly += rowsH[1] + rg;
   titled("托盘 LP", d.lp || "-", M, ly, leftW, rowsH[2]); ly += rowsH[2] + rg;
   titled("批次 BATCH", d.batch || "-", M, ly, leftW, rowsH[3]);
-  if (qm) it.push({k:"qr", x:M + cw - qs, y:lowTop, mag, m:qm, v:qrData});
+  if (qm) it.push({k:"qr", x:M + cw - qs, y:H - M - qs, mag, m:qm, v:qrData});
   return {W, H, dpmm, items: it};
 }
 
@@ -1633,6 +1645,7 @@ function renderCfg(){
   $("cfgPhoto").checked = CFG.photo !== false; $("cfgPrint").checked = CFG.print !== false;
   $("cfgForm").value = CFG.formUrl || ""; $("cfgOpenForm").checked = CFG.openForm !== false;
   $("cfgSysFile").checked = !!CFG.sysFromFile;
+  $("cfgQr").value = CFG.qrMode || "qronly";
   const titles = Object.entries(SAMPLE_TITLES);
   $("cfgMap").innerHTML = MAP_KEYS.map(([k, label]) => {
     const m = CFG.map[k] || {field: "", type: "text"};
@@ -1649,6 +1662,7 @@ function readCfg(){
   CFG.photo = $("cfgPhoto").checked; CFG.print = $("cfgPrint").checked;
   CFG.formUrl = $("cfgForm").value.trim(); CFG.openForm = $("cfgOpenForm").checked;
   CFG.sysFromFile = $("cfgSysFile").checked;
+  CFG.qrMode = $("cfgQr").value;
   MAP_KEYS.forEach(([k]) => {
     let v = document.querySelector(`[data-mk="${k}"]`).value.replace(/[\s\u3000]+/g, " ").trim();
     if (k === "photo") v = v.replace(/\s+/g, "");
@@ -2329,6 +2343,9 @@ setInterval(() => {
 
 /* ---------------- Language (English / 中文) ---------------- */
 const ZH = {
+  "Tag number as QR only, no barcode (one code, recommended)":"只打印标签号二维码，不打印条码（只有一个码，推荐）",
+  "QR code on the count label":"盘点标签上的二维码", "Tag number (same as the barcode, safest for the WeCom photo form)":"标签号（与条码相同，企业微信收集表扫描最安全）",
+  "Item code (the WeCom form may scan it by mistake)":"物料编码（企业微信收集表可能误扫）", "No QR code":"不打印二维码",
   "账面数量 Sheet qty":"账面数量 Sheet qty", "System qty printed on the count sheet. Enter 0 if empty.":"盘点单上的系统数量。没有就填 0。", "From the sheet":"盘点单上的数量",
   "实盘数量 Counted qty":"实盘数量 Counted qty", "What you physically counted on the pallet.":"你在托盘上实际数到的数量。", "Your count":"实盘数量",
   "Quantities are different":"数量不一致", "📄 Sheet qty":"📄 账面数量", "✋ Counted qty":"✋ 实盘数量",
@@ -2558,7 +2575,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.7.0";
 $("appVer").textContent = "Version " + APP_VERSION;
 /* ---- in-app update: compare with version.json on GitHub Pages, download the APK from the latest release ---- */
 const UPD_JSON = "https://venkat365ax-ui.github.io/Barcode-Printer/version.json";
