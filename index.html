@@ -1573,7 +1573,7 @@ const MAP_KEYS = [
   ["counter", "Counter name", "",               "text",   /盘点人姓名|counter name|姓名/i],
   ["time",    "Count time",   "",               "date",   /盘点时间|提交时间|count time|submitted/i],
   ["status",  "Status",       "",               "select", /状态|status/i],
-  ["notes",   "Notes",        "备注 Notes",     "text",   /备注|note/i],
+  ["notes",   "Notes / Comments", "Comments",   "text",   /^comments?$|备注|^notes?$|comment/i],
   ["photo",   "Photo (field ID)", "",           "image",  /照片|photo|图片/i]
 ];
 const TYPES = ["text","number","select","date","image"];
@@ -2410,7 +2410,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.4.1";
 $("appVer").textContent = "Version " + APP_VERSION;
 /* ---- in-app update: compare with version.json on GitHub Pages, download the APK from the latest release ---- */
 const UPD_JSON = "https://venkat365ax-ui.github.io/Barcode-Printer/version.json";
