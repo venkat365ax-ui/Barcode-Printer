@@ -44,6 +44,11 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import android.content.ContentValues;
+import android.app.DownloadManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.IntentFilter;
+import android.provider.Settings;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
@@ -546,6 +551,48 @@ public class MainActivity extends Activity {
                     }
                 }
             }).start();
+        }
+
+        /** Download the new APK with Android's download manager, then open the installer. */
+        @JavascriptInterface
+        public void downloadUpdate(final String url, final String callback) {
+            ui.post(() -> {
+                try {
+                    if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+                        Intent s = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName()));
+                        startActivity(s);
+                        callJs(callback, false, "install-permission");
+                        return;
+                    }
+                    final DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+                    DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
+                    req.setTitle("StockTag update");
+                    req.setMimeType("application/vnd.android.package-archive");
+                    req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                    req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "StockTag-" + System.currentTimeMillis() + ".apk");
+                    final long id = dm.enqueue(req);
+                    BroadcastReceiver rcv = new BroadcastReceiver() {
+                        @Override public void onReceive(Context c, Intent in) {
+                            if (in.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1) != id) return;
+                            try { unregisterReceiver(this); } catch (Exception ignored) { }
+                            Uri apk = dm.getUriForDownloadedFile(id);
+                            if (apk == null) { callJs(callback, false, "download failed"); return; }
+                            try {
+                                Intent inst = new Intent(Intent.ACTION_VIEW);
+                                inst.setDataAndType(apk, "application/vnd.android.package-archive");
+                                inst.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                                startActivity(inst);
+                                callJs(callback, true, "");
+                            } catch (Exception e) { callJs(callback, false, String.valueOf(e.getMessage())); }
+                        }
+                    };
+                    IntentFilter f = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+                    if (Build.VERSION.SDK_INT >= 33) registerReceiver(rcv, f, Context.RECEIVER_EXPORTED);
+                    else registerReceiver(rcv, f);
+                } catch (Exception e) {
+                    callJs(callback, false, String.valueOf(e.getMessage()));
+                }
+            });
         }
 
         /** Open a link, preferring the WeCom app (com.tencent.wework). Callback message: "wecom" or "other". */

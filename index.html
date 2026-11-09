@@ -173,6 +173,8 @@
     <button type="button" class="mi" id="installBtn" hidden><span class="ic">📲</span><span>Install app</span></button>
     <div class="muted" id="installHint" hidden></div>
     <div class="muted" id="appVer"></div>
+    <button type="button" class="small-btn" id="updBtn" style="margin-top:6px">🔄 Check for update</button>
+    <div class="muted" id="updMsg" style="margin-top:4px"></div>
   </div>
   <div class="dfoot">
     <div class="muted" style="margin-bottom:8px">Language</div>
@@ -1418,6 +1420,7 @@ function showTab(t){
   TABS.forEach(n => { $("tab-" + n).hidden = n !== t; });
   document.querySelectorAll(".mi").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   $("pageTitle").textContent = PAGE[t][0]; $("pageSub").textContent = PAGE[t][1];
+  $("pageSub").style.display = t === "count" ? "none" : "";
   closeMenu();
   const bar = t === "label" || t === "count";
   document.querySelector(".actions").style.display = bar ? "" : "none";
@@ -1523,7 +1526,7 @@ function countLayout(d){
   y += mm(0.6); line(y); y += mm(1.0);
   // lower block: details left, QR right
   const lowTop = y, avail = H - M - lowTop;
-  const qrData = [d.tag, d.item, d.qty, d.loc, d.lp || "", d.batch || ""].join("|");
+  const qrData = d.item || "";   // QR holds only the item code (the tag barcode above holds the tag)
   const qm = qrMatrix(qrData);
   let mag = 2, qs = 0;
   if (qm){ const n = qm.length; mag = Math.max(2, Math.floor(Math.min(avail, mm(21)) / n)); qs = n*mag; }
@@ -1683,7 +1686,9 @@ function cellValue(type, v, rec){
   return String(v);
 }
 function recordValues(rec, onlyPhoto){
-  const src = {status: CFG.statusDefault || "待核对 Pending", tag: rec.tag, team: rec.team, loc: rec.loc, item: rec.item, qty: rec.qty, unit: rec.unit, lp: rec.lp, batch: rec.batch, counter: rec.counter, time: rec.time, notes: rec.notes, photo: rec.photo};
+  const noCounterCol = !(CFG.map.counter && CFG.map.counter.field);
+  const notesWithName = noCounterCol && rec.counter ? ["盘点人 " + rec.counter, rec.notes].filter(Boolean).join(" | ") : rec.notes;
+  const src = {status: CFG.statusDefault || "待核对 Pending", tag: rec.tag, team: rec.team, loc: rec.loc, item: rec.item, qty: rec.qty, unit: rec.unit, lp: rec.lp, batch: rec.batch, counter: rec.counter, time: rec.time, notes: notesWithName, photo: rec.photo};
   const out = {};
   for (const [k] of MAP_KEYS){
     if (onlyPhoto && k !== "photo") continue;
@@ -2171,6 +2176,8 @@ setInterval(() => {
   const s = $("pstat"), c = $("cpstat");
   c.className = s.className.replace("pstat", "pstat"); $("cpstatText").textContent = $("pstatText").textContent;
   c.querySelector("button").textContent = s.querySelector("button").textContent;
+  c.style.display = s.classList.contains("ok") ? "none" : "";          // only show when the printer needs attention
+  $("sstat").style.display = cfgOk() ? "none" : "";                    // only show when WeCom isn't set up
 }, 1500);
 (function initCount(){
   const who = store.get("st_who", {}), dr = store.get("st_draft", {});
@@ -2185,6 +2192,9 @@ setInterval(() => {
 
 /* ---------------- Language (English / 中文) ---------------- */
 const ZH = {
+  "🔄 Check for update":"🔄 检查更新", "Checking…":"正在检查…", "Couldn't check (no connection to GitHub).":"无法检查（无法连接 GitHub）。",
+  "✅ You have the latest version.":"✅ 已是最新版本。", "Downloading… the installer opens when it's done.":"正在下载…完成后会打开安装界面。",
+  "Tap Update / Install on the next screen.":"请在下一个界面点击“更新/安装”。", "Allow StockTag to install apps, then tap Update again.":"请允许 StockTag 安装应用，然后再次点击更新。", "Update":"更新",
   "WeCom photo form link":"企业微信照片收集表链接", "After printing, open the WeCom photo form":"打印后打开企业微信照片收集表",
   "The counter sticks the label, scans its barcode in the form and takes the photo there. The photo then shows in the Smart Sheet row with the same tag number.":"盘点人贴好标签后，在收集表中扫描标签条码并拍照。照片会显示在智能表格中标签号相同的那一行。",
   "📷 Open WeCom photo form":"📷 打开企业微信照片收集表", "Next count":"下一条盘点",
@@ -2289,6 +2299,8 @@ const ZH = {
 };
 const ZH_FIELD = {"item code":"物料编码", "qty":"数量", "batch number":"批次号", "license plate":"托盘号", "location":"库位"};
 const ZH_RX = [
+  [/^New version (.*) available\.?$/, m => `有新版本 ${m[1]}`],
+  [/^⬇ Update to (.*)$/, m => `⬇ 更新到 ${m[1]}`],
   [/^✅ Photo field ID (.*) saved\. Photos will be sent to WeCom\.$/, m => `✅ 照片字段 ID ${m[1]} 已保存。照片将发送到企业微信。`],
   [/^🖼 Export photos \((\d+) new\)$/, m => `🖼 导出照片（${m[1]} 张新）`],
   [/^🖼 Saved (\d+) photos as (.*) in (.*)$/, m => `🖼 已保存 ${m[1]} 张照片：${m[2]}，位置 ${m[3]}`],
@@ -2398,8 +2410,33 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.4.0";
 $("appVer").textContent = "Version " + APP_VERSION;
+/* ---- in-app update: compare with version.json on GitHub Pages, download the APK from the latest release ---- */
+const UPD_JSON = "https://venkat365ax-ui.github.io/Barcode-Printer/version.json";
+const UPD_APK  = "https://github.com/venkat365ax-ui/Barcode-Printer/releases/latest/download/StockTag.apk";
+function verNum(v){ return String(v || "0").split(".").map(n => parseInt(n, 10) || 0).reduce((a, n) => a*1000 + n, 0); }
+async function checkUpdate(manual){
+  if (manual) $("updMsg").textContent = "Checking…";
+  let latest;
+  try {
+    const r = await fetch(UPD_JSON + "?t=" + Date.now(), {cache: "no-store"});
+    latest = (await r.json()).version;
+  } catch(e){ if (manual) $("updMsg").textContent = "Couldn't check (no connection to GitHub)."; return; }
+  if (verNum(latest) <= verNum(APP_VERSION)){ if (manual) $("updMsg").textContent = "✅ You have the latest version."; return; }
+  $("updMsg").textContent = "New version " + latest + " available.";
+  $("updBtn").textContent = "⬇ Update to " + latest;
+  $("updBtn").dataset.ready = "1";
+  showToast("New version " + latest + " available", "Update", installUpdate);
+}
+async function installUpdate(){
+  if (!(NATIVE && window.AndroidPrinter && AndroidPrinter.downloadUpdate)){ location.reload(); return; }
+  $("updMsg").textContent = "Downloading… the installer opens when it's done.";
+  const r = await nativeCall(cb => AndroidPrinter.downloadUpdate(UPD_APK, cb));
+  $("updMsg").textContent = r.ok ? "Tap Update / Install on the next screen." : (r.msg === "install-permission" ? "Allow StockTag to install apps, then tap Update again." : "Download failed: " + (r.msg || ""));
+}
+$("updBtn").addEventListener("click", () => $("updBtn").dataset.ready ? installUpdate() : checkUpdate(true));
+setTimeout(() => checkUpdate(false), 5000);
 let deferredInstall = null;
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredInstall = e; if (!isStandalone()) $("installBtn").hidden = false; });
