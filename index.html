@@ -127,6 +127,8 @@
   .pp-warn{background:#fef3f2;border:1px solid #fecdca;color:#b42318;border-radius:9px;padding:9px 10px;margin:6px 0;text-align:left;font-size:14px}
   .pp-btn{width:100%;padding:16px;font-size:18px;font-weight:700;border-radius:12px;margin-top:12px;background:var(--brand);color:#fff;border:0}
   .pp-btn2{width:100%;padding:13px;font-size:16px;border-radius:12px;margin-top:8px;background:#fff;border:1px solid var(--line)}
+  .colwho td{border-bottom:1px solid var(--line);padding:5px 4px;vertical-align:top}
+  .colwho td:first-child{font-weight:600;width:45%}
   .sstat{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:14px;font-size:13px}
   .sstat .dot{width:9px;height:9px;border-radius:50%;background:#f79009;flex:0 0 auto}
   .sstat.ok .dot{background:#12b76a}
@@ -483,12 +485,36 @@
     </div>
     <div class="muted" style="margin:4px 0 8px">Column for each value. The name must match the Smart Sheet column title exactly. Leave empty to not send that value.</div>
     <div id="cfgMap"></div>
+    <details style="margin-top:10px"><summary style="font-weight:600;cursor:pointer">All sheet columns and who fills them</summary>
+      <table class="colwho" style="width:100%;font-size:13px;margin-top:6px;border-collapse:collapse">
+        <tr><td>标签号 Tag no.</td><td>StockTag</td></tr><tr><td>小组 Team</td><td>StockTag</td></tr>
+        <tr><td>库位 Location</td><td>StockTag</td></tr><tr><td>物料 Item</td><td>StockTag</td></tr>
+        <tr><td>物理数量 Physical Qty</td><td>StockTag (counted)</td></tr>
+        <tr><td>系统数量 System Qty</td><td>StockTag, from the D365 on-hand file</td></tr>
+        <tr><td>数量差异 Qty Difference</td><td>StockTag (Physical − System), or the sheet if it's a formula</td></tr>
+        <tr><td>托盘号 LP</td><td>StockTag</td></tr><tr><td>批次 Batch</td><td>StockTag</td></tr>
+        <tr><td>提交时间 Submitted</td><td>StockTag</td></tr>
+        <tr><td>照片 Photo</td><td>Old manual rows only</td></tr>
+        <tr><td>匹配照片 Matched Photo</td><td>WeCom photo form (lookup by tag)</td></tr>
+        <tr><td>Issue Category</td><td>StockTag suggests it from Physical vs System; reviewer can change</td></tr>
+        <tr><td>状态 Status</td><td>StockTag sets Pending; reviewer updates</td></tr>
+        <tr><td>Corrective actions</td><td>Reviewer</td></tr><tr><td>Comments</td><td>StockTag (counter name + note); reviewer adds</td></tr>
+        <tr><td>核对人 Reviewer</td><td>Reviewer</td></tr><tr><td>Excel stock accuracy</td><td>Reviewer</td></tr>
+        <tr><td>盘点人 Counter</td><td>WeCom (automatic)</td></tr><tr><td>序号 Serial</td><td>WeCom (automatic)</td></tr>
+      </table></details>
     <div class="field" style="margin-top:10px">
       <label><span><input type="checkbox" id="cfgPhoto" checked> Ask for a photo after the label prints</span></label>
       <div class="muted">Stick the label on the pallet, then take the photo. Photos stay on this phone: use Export photos on the Count page to send them, named by tag number.</div>
     </div>
     <div class="field">
       <label><span><input type="checkbox" id="cfgPrint" checked> Print the count label when I submit</span></label>
+    </div>
+    <div class="field" style="border-top:1px solid var(--line);padding-top:12px">
+      <label>System stock (D365 on-hand)</label>
+      <div class="muted" style="margin-bottom:6px">Load a D365 on-hand export (Excel or CSV with item, location and on-hand qty). Each count then sends the system qty for that item + location to the System Qty column. Counters don't see it.</div>
+      <input type="file" id="ohFile" accept=".xlsx,.xls,.csv" style="display:none">
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="small-btn" id="ohLoad">📥 Load on-hand file</button><button type="button" class="small-btn" id="ohClear">Clear</button></div>
+      <div class="muted" id="ohMsg" style="margin-top:6px"></div>
     </div>
     <div class="field" style="border-top:1px solid var(--line);padding-top:12px">
       <label for="cfgForm">WeCom photo form link</label>
@@ -1567,6 +1593,9 @@ const MAP_KEYS = [
   ["loc",     "Location",     "库位 Location",  "text",   /库位|location|loc/i],
   ["item",    "Item",         "物料 Item",      "text",   /物料|item/i],
   ["qty",     "Counted qty",  "物理数量 Physical Qty", "number", /^(?!.*(系统|system|差异|diff)).*(物理数量|physical|数量|qty|quantity)/i],
+  ["sysqty",  "System qty (D365)", "系统数量 System Qty", "number", /系统数量|system\s*qty|system quantity/i],
+  ["qtydiff", "Qty difference", "数量差异 Qty Difference", "number", /数量差异|qty\s*diff|difference/i],
+  ["issue",   "Issue category (auto)", "Issue Category", "select", /issue\s*category|问题类型|问题分类/i],
   ["unit",    "Unit",         "",               "text",   /单位|unit/i],
   ["lp",      "License plate","LP 托盘号",      "text",   /托盘|\blp\b|license/i],
   ["batch",   "Batch",        "批次 Batch",     "text",   /批次|batch/i],
@@ -1648,6 +1677,10 @@ function matchSample(){
     if (v && typeof v === "object"){
       SAMPLE_TITLES[id] = v.title || id; if (v.type) types[id] = schemaType(v.type);
       if (/状态|status/i.test(v.title || "") && Array.isArray(v.enum) && v.enum.length) CFG.statusDefault = v.enum[0];
+      if (/issue\s*category/i.test(v.title || "") && Array.isArray(v.enum)){
+        const pick = rx => v.enum.find(x => rx.test(x)) || "";
+        CFG.issueOk = pick(/match/i); CFG.issueOver = pick(/over/i); CFG.issueLess = pick(/less|short/i); CFG.issueZero = pick(/zero/i);
+      }
     }
     else SAMPLE_TITLES[id] = v || id;
     if (!types[id] && id in vals) types[id] = guessType(vals[id]);
@@ -1688,7 +1721,11 @@ function cellValue(type, v, rec){
 function recordValues(rec, onlyPhoto){
   const noCounterCol = !(CFG.map.counter && CFG.map.counter.field);
   const notesWithName = noCounterCol && rec.counter ? ["盘点人 " + rec.counter, rec.notes].filter(Boolean).join(" | ") : rec.notes;
-  const src = {status: CFG.statusDefault || "待核对 Pending", tag: rec.tag, team: rec.team, loc: rec.loc, item: rec.item, qty: rec.qty, unit: rec.unit, lp: rec.lp, batch: rec.batch, counter: rec.counter, time: rec.time, notes: notesWithName, photo: rec.photo};
+  const sq = sysQtyFor(rec), pq = Number(rec.qty);
+  const diff = sq === "" || isNaN(pq) ? "" : Math.round((pq - Number(sq)) * 1000) / 1000;
+  const issue = diff === "" ? "" : Number(sq) === 0 && pq > 0 ? (CFG.issueZero || "Zero stock available in System")
+              : diff === 0 ? (CFG.issueOk || "Stock Matched") : diff > 0 ? (CFG.issueLess || "Less stock in system") : (CFG.issueOver || "Over stock in system");
+  const src = {sysqty: sq, qtydiff: diff, issue, status: CFG.statusDefault || "待核对 Pending", tag: rec.tag, team: rec.team, loc: rec.loc, item: rec.item, qty: rec.qty, unit: rec.unit, lp: rec.lp, batch: rec.batch, counter: rec.counter, time: rec.time, notes: notesWithName, photo: rec.photo};
   const out = {};
   for (const [k] of MAP_KEYS){
     if (onlyPhoto && k !== "photo") continue;
@@ -1880,6 +1917,53 @@ async function submitCount(){
     $("c_item").focus();
   }
 }
+
+/* ---- System stock from a D365 on-hand export ---- */
+const OH_NORM = v => String(v == null ? "" : v).toUpperCase().replace(/\s+/g, "");
+let OH = store.get("st_onhand", null);   // {at, file, lines, byLoc:{"ITEM|LOC":qty}, byLp:{"ITEM|LOC|LP":qty}}
+function ohStatus(){
+  $("ohMsg").textContent = OH ? `✅ ${OH.lines} on-hand lines from ${OH.file} (loaded ${fmtTime(OH.at)}). Counts at locations not in the file are sent as 0.` : "No on-hand file loaded, so System Qty is not sent.";
+}
+function sysQtyFor(rec){
+  if (!OH) return "";
+  const k = OH_NORM(rec.item) + "|" + OH_NORM(rec.loc);
+  if (rec.lp && OH.byLp){ const q = OH.byLp[k + "|" + OH_NORM(rec.lp)]; if (q !== undefined) return q; }
+  return OH.byLoc[k] !== undefined ? OH.byLoc[k] : 0;
+}
+async function loadOnHand(file){
+  $("ohMsg").textContent = "Reading…";
+  try {
+    if (!window.XLSX) await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
+    const wb = XLSX.read(await file.arrayBuffer(), {type: "array"});
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header: 1, raw: true, defval: ""});
+    let h = -1, ci = -1, cl = -1, cq = -1, cp = -1;
+    for (let r = 0; r < Math.min(rows.length, 15) && h < 0; r++){
+      const H = rows[r].map(x => String(x).toLowerCase().trim());
+      const find = rx => H.findIndex(x => rx.test(x));
+      ci = find(/^item( number)?$|item number|物料编码|物料|^item$/); cl = find(/location|库位|bin/);
+      cq = find(/physical inventory|on-?hand|available physical|physical qty|物理|在库|库存数量|^qty$|quantity|数量/);
+      cp = find(/license plate|^lp$|托盘/);
+      if (ci >= 0 && cl >= 0 && cq >= 0) h = r;
+    }
+    if (h < 0) throw new Error("Couldn't find the item, location and on-hand qty columns in the first rows");
+    const byLoc = {}, byLp = {}; let n = 0;
+    for (let r = h + 1; r < rows.length; r++){
+      const it = OH_NORM(rows[r][ci]), lo = OH_NORM(rows[r][cl]);
+      const q = Number(String(rows[r][cq]).replace(/,/g, ""));
+      if (!it || !lo || isNaN(q)) continue;
+      const k = it + "|" + lo; byLoc[k] = Math.round(((byLoc[k] || 0) + q) * 1000) / 1000; n++;
+      if (cp >= 0 && rows[r][cp]){ const kl = k + "|" + OH_NORM(rows[r][cp]); byLp[kl] = Math.round(((byLp[kl] || 0) + q) * 1000) / 1000; }
+    }
+    if (!n) throw new Error("No stock lines found");
+    OH = {at: Date.now(), file: file.name, lines: n, byLoc, byLp};
+    store.set("st_onhand", OH);
+    ohStatus();
+  } catch(e){ $("ohMsg").textContent = "❌ " + (e.message || e); }
+}
+$("ohLoad").addEventListener("click", () => { $("ohFile").value = ""; $("ohFile").click(); });
+$("ohFile").addEventListener("change", e => { if (e.target.files[0]) loadOnHand(e.target.files[0]); });
+$("ohClear").addEventListener("click", () => { OH = null; try { localStorage.removeItem("st_onhand"); } catch(_){} ohStatus(); });
+ohStatus();
 
 /* ---- WeCom photo form ---- */
 function formOn(){ return CFG.openForm !== false && /^https:\/\//.test(CFG.formUrl || ""); }
@@ -2192,6 +2276,10 @@ setInterval(() => {
 
 /* ---------------- Language (English / 中文) ---------------- */
 const ZH = {
+  "Qty difference":"数量差异", "Issue category (auto)":"问题类型（自动）", "All sheet columns and who fills them":"表格所有列及填写方",
+  "System qty (D365)":"系统数量 (D365)", "System stock (D365 on-hand)":"系统库存（D365 在库）", "📥 Load on-hand file":"📥 导入在库文件", "Clear":"清除",
+  "Load a D365 on-hand export (Excel or CSV with item, location and on-hand qty). Each count then sends the system qty for that item + location to the System Qty column. Counters don't see it.":"导入 D365 在库导出文件（含物料、库位和在库数量的 Excel 或 CSV）。每次盘点会把该物料+库位的系统数量发送到“系统数量”列。盘点人看不到这个数量。",
+  "No on-hand file loaded, so System Qty is not sent.":"未导入在库文件，因此不发送系统数量。", "Reading…":"正在读取…",
   "🔄 Check for update":"🔄 检查更新", "Checking…":"正在检查…", "Couldn't check (no connection to GitHub).":"无法检查（无法连接 GitHub）。",
   "✅ You have the latest version.":"✅ 已是最新版本。", "Downloading… the installer opens when it's done.":"正在下载…完成后会打开安装界面。",
   "Tap Update / Install on the next screen.":"请在下一个界面点击“更新/安装”。", "Allow StockTag to install apps, then tap Update again.":"请允许 StockTag 安装应用，然后再次点击更新。", "Update":"更新",
@@ -2410,7 +2498,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.4.2";
+const APP_VERSION = "1.5.1";
 $("appVer").textContent = "Version " + APP_VERSION;
 /* ---- in-app update: compare with version.json on GitHub Pages, download the APK from the latest release ---- */
 const UPD_JSON = "https://venkat365ax-ui.github.io/Barcode-Printer/version.json";
