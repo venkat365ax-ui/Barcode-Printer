@@ -129,6 +129,19 @@
   .pp-btn2{width:100%;padding:13px;font-size:16px;border-radius:12px;margin-top:8px;background:#fff;border:1px solid var(--line)}
   .colwho td{border-bottom:1px solid var(--line);padding:5px 4px;vertical-align:top}
   .colwho td:first-child{font-weight:600;width:45%}
+  .qbox{border:2px solid;border-radius:12px;padding:10px 12px;margin-bottom:12px}
+  .qbox label{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;font-size:15px}
+  .qbox small{font-weight:400;color:var(--muted);font-size:12px}
+  .qbox .qic{font-size:22px;line-height:1}
+  .qbox input{width:100%}
+  .qsys{border-color:#f79009;background:#fffaeb}
+  .qsys input{border-color:#fdb022;background:#fff;font-size:18px}
+  .qphys{border-color:#12b76a;background:#ecfdf3}
+  .qphys input{border-color:#32d583;background:#fff}
+  .qc-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+  .qc-grid div{border-radius:10px;padding:10px;text-align:center}
+  .qc-grid b{display:block;font-size:30px}
+  .qc-diff{font-size:18px;font-weight:700;margin:6px 0 4px}
   .sstat{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:14px;font-size:13px}
   .sstat .dot{width:9px;height:9px;border-radius:50%;background:#f79009;flex:0 0 auto}
   .sstat.ok .dot{background:#12b76a}
@@ -406,16 +419,19 @@
       <div id="cItemInfo" class="iteminfo"></div>
       <div class="err" id="err_c_item"></div>
     </div>
-    <div class="row">
-      <div class="field">
-        <label for="c_qty"><span>Counted qty <b class="req">*</b></span></label>
-        <input type="text" id="c_qty" inputmode="decimal" autocomplete="off" placeholder="e.g. 500" class="bigqty">
-        <div class="err" id="err_c_qty"></div>
-      </div>
-      <div class="field">
-        <label for="c_unit">Unit</label>
-        <input type="text" id="c_unit" autocomplete="off" autocapitalize="characters" placeholder="PCS">
-      </div>
+    <div class="qbox qsys" id="qSysBox">
+      <label for="c_sys"><span class="qic">📄</span><span><b>账面数量 Sheet qty</b> <b class="req">*</b><br><small>System qty printed on the count sheet. Enter 0 if empty.</small></span></label>
+      <input type="text" id="c_sys" inputmode="decimal" autocomplete="off" placeholder="From the sheet">
+      <div class="err" id="err_c_sys"></div>
+    </div>
+    <div class="qbox qphys">
+      <label for="c_qty"><span class="qic">✋</span><span><b>实盘数量 Counted qty</b> <b class="req">*</b><br><small>What you physically counted on the pallet.</small></span></label>
+      <input type="text" id="c_qty" inputmode="decimal" autocomplete="off" placeholder="Your count" class="bigqty">
+      <div class="err" id="err_c_qty"></div>
+    </div>
+    <div class="field">
+      <label for="c_unit">Unit</label>
+      <input type="text" id="c_unit" autocomplete="off" autocapitalize="characters" placeholder="PCS">
     </div>
     <div class="field">
       <label for="c_lp">License plate</label>
@@ -511,6 +527,7 @@
     </div>
     <div class="field" style="border-top:1px solid var(--line);padding-top:12px">
       <label>System stock (D365 on-hand)</label>
+      <label style="margin:4px 0 8px"><span><input type="checkbox" id="cfgSysFile"> Take System qty from the on-hand file (stock freeze). Counters then don't enter it.</span></label>
       <div class="muted" style="margin-bottom:6px">Load a D365 on-hand export (Excel or CSV with item, location and on-hand qty). Each count then sends the system qty for that item + location to the System Qty column. Counters don't see it.</div>
       <input type="file" id="ohFile" accept=".xlsx,.xls,.csv" style="display:none">
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="small-btn" id="ohLoad">📥 Load on-hand file</button><button type="button" class="small-btn" id="ohClear">Clear</button></div>
@@ -1615,6 +1632,7 @@ function renderCfg(){
   $("cfgUrl").value = CFG.url || "";
   $("cfgPhoto").checked = CFG.photo !== false; $("cfgPrint").checked = CFG.print !== false;
   $("cfgForm").value = CFG.formUrl || ""; $("cfgOpenForm").checked = CFG.openForm !== false;
+  $("cfgSysFile").checked = !!CFG.sysFromFile;
   const titles = Object.entries(SAMPLE_TITLES);
   $("cfgMap").innerHTML = MAP_KEYS.map(([k, label]) => {
     const m = CFG.map[k] || {field: "", type: "text"};
@@ -1630,6 +1648,7 @@ function readCfg(){
   CFG.url = $("cfgUrl").value.trim();
   CFG.photo = $("cfgPhoto").checked; CFG.print = $("cfgPrint").checked;
   CFG.formUrl = $("cfgForm").value.trim(); CFG.openForm = $("cfgOpenForm").checked;
+  CFG.sysFromFile = $("cfgSysFile").checked;
   MAP_KEYS.forEach(([k]) => {
     let v = document.querySelector(`[data-mk="${k}"]`).value.replace(/[\s\u3000]+/g, " ").trim();
     if (k === "photo") v = v.replace(/\s+/g, "");
@@ -1790,11 +1809,11 @@ async function sendWaiting(manual){
 }
 
 /* ---- form ---- */
-const CF = ["c_loc","c_item","c_qty","c_unit","c_lp","c_batch","c_notes"];
+const CF = ["c_loc","c_item","c_sys","c_qty","c_unit","c_lp","c_batch","c_notes"];
 function readCount(){
   const o = {kind: "count"};
   o.team = $("c_team").value; o.counter = $("c_name").value.trim();
-  o.loc = $("c_loc").value.trim(); o.item = $("c_item").value.trim(); o.qty = $("c_qty").value.trim();
+  o.loc = $("c_loc").value.trim(); o.item = $("c_item").value.trim(); o.qty = $("c_qty").value.trim(); o.sysqty = $("c_sys").value.trim();
   o.unit = $("c_unit").value.trim(); o.lp = $("c_lp").value.trim(); o.batch = $("c_batch").value.trim(); o.notes = $("c_notes").value.trim();
   o.name = o.item ? itemName(o.item) : "";
   return o;
@@ -1812,11 +1831,13 @@ function validateCount(c, req){
   $("err_c_who").textContent = "";
   ["c_loc","c_item","c_lp","c_batch"].forEach(id => set(id, $(id).value && !validB($(id).value.trim()) ? "Use only standard letters, numbers and symbols." : ""));
   if (c.qty && (isNaN(Number(c.qty)) || Number(c.qty) < 0)) set("c_qty", "Qty should be a number (0 or more)."); else set("c_qty", "");
+  if (sysManual() && c.sysqty && (isNaN(Number(c.sysqty)) || Number(c.sysqty) < 0)) set("c_sys", "Sheet qty should be a number (0 or more)."); else set("c_sys", "");
   if (req){
     if (!c.team || !c.counter){ $("err_c_who").textContent = "Choose your team and enter your name."; ok = false; }
     if (!c.loc) set("c_loc", "Scan or type the location.");
     if (!c.item) set("c_item", "Item code is required.");
     if (!c.qty) set("c_qty", "Enter the counted qty.");
+    if (sysManual() && c.sysqty === "") set("c_sys", "Enter the sheet qty (0 if the sheet shows nothing).");
   }
   return ok;
 }
@@ -1852,7 +1873,7 @@ function showCSugg(){
     + (total > list.length ? `<div class="more">${total - list.length} more, keep typing to narrow down</div>` : "") : `<div class="more">No matching item in the list</div>`;
   $("csugg").classList.add("open");
 }
-function pickCSugg(i){ const r = csRows[i]; if (!r) return; $("c_item").value = r[0]; $("csugg").classList.remove("open"); updateCItemInfo(); countRender(); $("c_qty").focus(); }
+function pickCSugg(i){ const r = csRows[i]; if (!r) return; $("c_item").value = r[0]; $("csugg").classList.remove("open"); updateCItemInfo(); countRender(); (sysManual() ? $("c_sys") : $("c_qty")).focus(); }
 
 /* ---- print ---- */
 async function printCountLabel(rec){
@@ -1875,7 +1896,7 @@ async function submitCount(){
   if (submitting) return;
   const c = readCount();
   if (!validateCount(c, true)){
-    const first = ["c_name","c_loc","c_item","c_qty"].find(id => (id === "c_name" ? !(c.team && c.counter) : $(id).classList.contains("bad")));
+    const first = ["c_name","c_loc","c_item","c_sys","c_qty"].find(id => (id === "c_name" ? !(c.team && c.counter) : $(id).classList.contains("bad")));
     if (first){ $(first).scrollIntoView({behavior: "smooth", block: "center"}); setTimeout(() => $(first).focus(), 300); }
     showToast("Fill in the required fields first.");
     return;
@@ -1891,10 +1912,14 @@ async function submitCount(){
     $("c_dup").scrollIntoView({behavior: "smooth", block: "center"});
     return;
   }
+  if (sysManual() && Number(c.sysqty) !== Number(c.qty)){
+    const ok = await confirmQty(c);
+    if (!ok){ setTimeout(() => $("c_qty").focus(), 200); return; }
+  }
   submitting = true; $("countBtn").disabled = true;
   const now = Date.now(), t = nextTag(c.team, now);
   const rec = {tag: t.tag, time: now, team: c.team, counter: c.counter, loc: c.loc.toUpperCase(), item: c.item, name: c.name, qty: c.qty, unit: c.unit.toUpperCase(),
-               lp: c.lp.toUpperCase(), batch: c.batch.toUpperCase(), notes: c.notes, sent: false, photo: null, photoSent: false, printed: false, err: "",
+               lp: c.lp.toUpperCase(), batch: c.batch.toUpperCase(), notes: c.notes, sysqty: sysManual() ? c.sysqty : "", sent: false, photo: null, photoSent: false, printed: false, err: "",
                hold: !formOn() && CFG.photo !== false && photoFieldOk()};
   useTag(t.key, t.n);
   await CDB.put(rec);
@@ -1903,7 +1928,7 @@ async function submitCount(){
     try { await printCountLabel(rec); rec.printed = true; await CDB.put(rec); }
     catch(e){ printMsg = " Label not printed: " + (e.message || e); }
   }
-  ["c_item","c_qty","c_lp","c_batch","c_notes"].forEach(id => $(id).value = "");
+  ["c_item","c_qty","c_sys","c_lp","c_batch","c_notes"].forEach(id => $(id).value = "");
   updateCItemInfo(); dupArmed = null; $("c_dup").hidden = true;
   submitting = false; $("countBtn").disabled = false;
   countRender(); await renderCounts();
@@ -1922,9 +1947,12 @@ async function submitCount(){
 const OH_NORM = v => String(v == null ? "" : v).toUpperCase().replace(/\s+/g, "");
 let OH = store.get("st_onhand", null);   // {at, file, lines, byLoc:{"ITEM|LOC":qty}, byLp:{"ITEM|LOC|LP":qty}}
 function ohStatus(){
+  if ($("qSysBox")) $("qSysBox").style.display = sysManual() ? "" : "none";
   $("ohMsg").textContent = OH ? `✅ ${OH.lines} on-hand lines from ${OH.file} (loaded ${fmtTime(OH.at)}). Counts at locations not in the file are sent as 0.` : "No on-hand file loaded, so System Qty is not sent.";
 }
+function sysManual(){ return !CFG.sysFromFile; }
 function sysQtyFor(rec){
+  if (sysManual()) return rec.sysqty === undefined || rec.sysqty === "" ? "" : Number(rec.sysqty);
   if (!OH) return "";
   const k = OH_NORM(rec.item) + "|" + OH_NORM(rec.loc);
   if (rec.lp && OH.byLp){ const q = OH.byLp[k + "|" + OH_NORM(rec.lp)]; if (q !== undefined) return q; }
@@ -1964,6 +1992,30 @@ $("ohLoad").addEventListener("click", () => { $("ohFile").value = ""; $("ohFile"
 $("ohFile").addEventListener("change", e => { if (e.target.files[0]) loadOnHand(e.target.files[0]); });
 $("ohClear").addEventListener("click", () => { OH = null; try { localStorage.removeItem("st_onhand"); } catch(_){} ohStatus(); });
 ohStatus();
+
+/* ---- check screen: sheet qty and counted qty differ ---- */
+function confirmQty(c){
+  return new Promise(res => {
+    const sq = Number(c.sysqty), pq = Number(c.qty), d = Math.round((pq - sq) * 1000) / 1000;
+    const ov = document.createElement("div"); ov.className = "pp-ov"; ov.id = "qtyCheck";
+    ov.innerHTML = `<div class="pp-box">
+      <div style="font-size:18px;font-weight:800">⚠ <span>Quantities are different</span></div>
+      <div class="pp-sub">${esc(c.item)} · ${esc(c.loc)}</div>
+      <div class="qc-grid">
+        <div class="qsys"><span>📄 Sheet qty</span><b>${esc(String(sq))}</b></div>
+        <div class="qphys"><span>✋ Counted qty</span><b>${esc(String(pq))}</b></div>
+      </div>
+      <div class="qc-diff" style="color:${d > 0 ? "#b54708" : "#b42318"}">${d > 0 ? "+" : ""}${esc(String(d))} ${esc(c.unit || "")}</div>
+      <div class="muted"><span>Check the numbers are in the right boxes. If a recount is needed, tap Edit.</span></div>
+      <button type="button" class="pp-btn" id="qcOk">✔ Correct, submit</button>
+      <button type="button" class="pp-btn2" id="qcEdit">✏ Edit</button>
+    </div>`;
+    document.body.appendChild(ov);
+    if (LANG === "zh") trTree(ov);
+    $("qcOk").onclick = () => { ov.remove(); res(true); };
+    $("qcEdit").onclick = () => { ov.remove(); res(false); };
+  });
+}
 
 /* ---- WeCom photo form ---- */
 function formOn(){ return CFG.openForm !== false && /^https:\/\//.test(CFG.formUrl || ""); }
@@ -2100,14 +2152,14 @@ async function saveFileOut(name, bytes, mime){
 async function exportCounts(){
   const all = (await CDB.all()).slice().reverse();
   if (!all.length){ showToast("No counts to export."); return; }
-  const head = ["Tag no.","Count time","Team","Counter","Location","Item","Product name","Qty","Unit","LP","Batch","Notes","Sent to WeCom","Photo file"];
-  const rows = all.map(r => [r.tag, fmtTime(r.time), r.team, r.counter, r.loc, r.item, r.name || "", Number(r.qty), r.unit || "", r.lp || "", r.batch || "", r.notes || "", r.sent ? "Yes" : "No", r.photo ? r.tag + ".jpg" : ""]);
+  const head = ["Tag no.","Count time","Team","Counter","Location","Item","Product name","Counted qty","Sheet / system qty","Unit","LP","Batch","Notes","Sent to WeCom","Photo file"];
+  const rows = all.map(r => [r.tag, fmtTime(r.time), r.team, r.counter, r.loc, r.item, r.name || "", Number(r.qty), sysQtyFor(r) === "" ? "" : Number(sysQtyFor(r)), r.unit || "", r.lp || "", r.batch || "", r.notes || "", r.sent ? "Yes" : "No", r.photo ? r.tag + ".jpg" : ""]);
   const stamp = fmtTime(Date.now()).replace(/[-: ]/g, "").slice(0, 12);
   const team = $("c_team").value || "team";
   try {
     if (!window.XLSX) await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
     const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
-    ws["!cols"] = head.map((h, i) => ({wch: [18,17,6,12,14,18,30,8,6,12,14,20,8,8][i]}));
+    ws["!cols"] = head.map((h, i) => ({wch: [18,17,6,12,14,18,30,10,12,6,12,14,20,8,8][i]}));
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Counts");
     const out = new Uint8Array(XLSX.write(wb, {bookType: "xlsx", type: "array"}));
     const where = await saveFileOut(`Counts_${team}_${stamp}.xlsx`, out, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -2166,7 +2218,7 @@ $("cPhotos").addEventListener("click", exportPhotos);
 
 /* ---- wire up ---- */
 $("countBtn").addEventListener("click", submitCount);
-$("cClearBtn").addEventListener("click", () => { ["c_item","c_qty","c_lp","c_batch","c_notes"].forEach(id => $(id).value = ""); updateCItemInfo(); countRender(); $("c_item").focus(); });
+$("cClearBtn").addEventListener("click", () => { ["c_item","c_qty","c_sys","c_lp","c_batch","c_notes"].forEach(id => $(id).value = ""); updateCItemInfo(); countRender(); $("c_item").focus(); });
 ["c_team","c_name",...CF].forEach(id => $(id).addEventListener("input", countRender));
 ["c_loc","c_unit","c_lp","c_batch"].forEach(id => $(id).addEventListener("input", e => {
   const p = e.target.selectionStart; e.target.value = e.target.value.toUpperCase(); try { e.target.setSelectionRange(p, p); } catch(_){}
@@ -2186,6 +2238,7 @@ $("csugg").addEventListener("click", e => { const o = e.target.closest(".opt"); 
 $("cItemInfo").addEventListener("click", e => { if (e.target.id === "cFixItem"){ const m = findExact($("c_item").value); if (m){ $("c_item").value = m[0]; updateCItemInfo(); countRender(); } } });
 $("c_loc").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); $("c_item").focus(); } });
 $("c_qty").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); submitCount(); } });
+$("c_sys").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); $("c_qty").focus(); } });
 $("sstatBtn").addEventListener("click", () => showTab("countcfg"));
 /* ---- admin PIN for Count settings ---- */
 let unlocked = false, pinMode = "open";   // open | set | change
@@ -2220,7 +2273,7 @@ $("lockBtn").addEventListener("click", async () => {
 ["lockPin","lockPin2"].forEach(id => $(id).addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); $("lockBtn").click(); } }));
 $("lockNow").addEventListener("click", () => { unlocked = false; lockRender(); });
 $("pinChange").addEventListener("click", () => { unlocked = false; pinMode = "change"; lockRender(); });
-$("cfgSave").addEventListener("click", () => { readCfg(); updateSheetStatus(); renderCounts(); setTimeout(() => sendWaiting(false).then(renderCounts), 300);
+$("cfgSave").addEventListener("click", () => { readCfg(); updateSheetStatus(); renderCounts(); ohStatus(); setTimeout(() => sendWaiting(false).then(renderCounts), 300);
   const pf = (CFG.map.photo || {}).field || "";
   $("cfgPhotoMsg").textContent = !pf ? "Photo: no field ID, so photos are not sent to WeCom (use Export photos)." : photoFieldOk() ? "✅ Photo field ID " + pf + " saved. Photos will be sent to WeCom." : "⚠ Photo field ID \"" + pf + "\" doesn't look right. It should look like fMqQT1.";
   $("cfgMsg").textContent = cfgOk() ? "✅ Saved." : CFG.url ? "⚠ Saved, but the Webhook address doesn't look right. It should start with https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=" : "Saved. No Webhook address, so counts stay on this phone."; });
@@ -2276,6 +2329,13 @@ setInterval(() => {
 
 /* ---------------- Language (English / 中文) ---------------- */
 const ZH = {
+  "账面数量 Sheet qty":"账面数量 Sheet qty", "System qty printed on the count sheet. Enter 0 if empty.":"盘点单上的系统数量。没有就填 0。", "From the sheet":"盘点单上的数量",
+  "实盘数量 Counted qty":"实盘数量 Counted qty", "What you physically counted on the pallet.":"你在托盘上实际数到的数量。", "Your count":"实盘数量",
+  "Quantities are different":"数量不一致", "📄 Sheet qty":"📄 账面数量", "✋ Counted qty":"✋ 实盘数量",
+  "Check the numbers are in the right boxes. If a recount is needed, tap Edit.":"请确认两个数量没有填反。如需复盘，请点“修改”。",
+  "✔ Correct, submit":"✔ 正确，提交", "✏ Edit":"✏ 修改",
+  "Enter the sheet qty (0 if the sheet shows nothing).":"请填写账面数量（盘点单上没有就填 0）。", "Sheet qty should be a number (0 or more).":"账面数量应为数字（0 或以上）。",
+  "Take System qty from the on-hand file (stock freeze). Counters then don't enter it.":"从在库文件读取系统数量（冻结库存时使用），盘点人无需填写。",
   "Qty difference":"数量差异", "Issue category (auto)":"问题类型（自动）", "All sheet columns and who fills them":"表格所有列及填写方",
   "System qty (D365)":"系统数量 (D365)", "System stock (D365 on-hand)":"系统库存（D365 在库）", "📥 Load on-hand file":"📥 导入在库文件", "Clear":"清除",
   "Load a D365 on-hand export (Excel or CSV with item, location and on-hand qty). Each count then sends the system qty for that item + location to the System Qty column. Counters don't see it.":"导入 D365 在库导出文件（含物料、库位和在库数量的 Excel 或 CSV）。每次盘点会把该物料+库位的系统数量发送到“系统数量”列。盘点人看不到这个数量。",
@@ -2498,7 +2558,7 @@ $("langBtn").addEventListener("click", () => setLang(LANG === "zh" ? "en" : "zh"
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ---------------- App (install + offline) ---------------- */
-const APP_VERSION = "1.5.1";
+const APP_VERSION = "1.6.0";
 $("appVer").textContent = "Version " + APP_VERSION;
 /* ---- in-app update: compare with version.json on GitHub Pages, download the APK from the latest release ---- */
 const UPD_JSON = "https://venkat365ax-ui.github.io/Barcode-Printer/version.json";
